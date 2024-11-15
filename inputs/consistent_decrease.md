@@ -1,0 +1,1 @@
+# Rate of workload spikes at the begining and steady decreases

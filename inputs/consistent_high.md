@@ -1,0 +1,1 @@
+# Rate of workload is high-intensive for long period of time

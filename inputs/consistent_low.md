@@ -1,0 +1,1 @@
+# Rate of workload is lpow-intensive for long period of time
