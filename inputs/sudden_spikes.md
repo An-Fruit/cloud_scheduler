@@ -1,4 +1,8 @@
 # Rate of workload spikes at different points in time
+# This is trying to see if we can handle a sudden spike in the amount of 
+# requests in a mixed web and streaming environment. The sudden increase in
+# requests in this case will be due to streaming (i.e. a new show is released, 
+# and everyone is trying to watch it).
 
 machine class:
 {
@@ -12,46 +16,20 @@ machine class:
         MIPS: [1000, 800, 600, 400]
         GPUs: yes
 }
-task class:
-{
-        Start time: 10000
-        End time : 20000
-        Inter arrival: 100
-        Expected runtime: 100000
-        Memory: 8
-        VM type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: X86
-        Task type: WEB
-        Seed: 520230
-}
-task class:
-{
-        Start time: 50000
-        End time : 60000
-        Inter arrival: 200
-        Expected runtime: 100000
-        Memory: 8
-        VM type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: X86
-        Task type: WEB
-        Seed: 520230
-}
+# baseline web task that will run throughout and require relatively
+# little resources
+# start at beginning, end at 5 minutes
 
-task class:
-{
-        Start time: 100000
-        End time : 110000
-        Inter arrival: 150
-        Expected runtime: 100000
-        Memory: 8
-        VM type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: X86
-        Task type: WEB
-        Seed: 520230
+task class: {
+    Start time: 0
+    End time: 300000000
+    Inter arrival: 5000
+    Expected runtime: 1500000
+    Memory: 4096
+    VM type: LINUX
+    GPU enabled: no
+    SLA type: SLA0
+    CPU type: X86
+    Task type: WEB
+    Seed: 123456
 }
