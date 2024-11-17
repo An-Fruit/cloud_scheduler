@@ -17,19 +17,54 @@ machine class:
         GPUs: yes
 }
 # baseline web task that will run throughout and require relatively
-# little resources
-# start at beginning, end at 5 minutes
-
-task class: {
+# little resources. The tasks will start arriving at time 0, and stop at 5
+# minutes.
+# These tasks don't require good performance, so SLA will be set to 2
+task class:
+{
     Start time: 0
     End time: 300000000
     Inter arrival: 5000
-    Expected runtime: 1500000
-    Memory: 4096
+    Expected runtime: 50000
+    Memory: 5
     VM type: LINUX
     GPU enabled: no
-    SLA type: SLA0
+    SLA type: SLA2
     CPU type: X86
     Task type: WEB
     Seed: 123456
+}
+
+# first spike: this will be streaming tasks that are compute intensive
+# and occurs in short bursts. This one will start 1 minute in, and last
+# for around 25 seconds
+task class:
+{
+        Start time: 60000000
+        End time: 85000000
+        Inter arrival: 100000
+        Expected runtime: 500000
+        Memory: 250
+        VM type: LINUX
+        GPU enabled: no
+        SLA type: SLA0
+        CPU type: X86
+        Task type: STREAM
+        Seed: 123456
+}
+
+# second spike. This will start around 3 minutes, and last 20 seconds
+task class:
+{
+        Start time: 180000000
+        End time: 200000000
+        Inter arrival: 100000
+        Expected runtime: 500000
+        Memory: 250
+        VM type: LINUX
+        GPU enabled: no
+        SLA type: SLA0
+        CPU type: X86
+        Task type: STREAM
+        Seed: 123456
 }
