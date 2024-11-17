@@ -26,7 +26,7 @@ task class:
         End time: 10000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -41,7 +41,7 @@ task class:
         End time: 9000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -56,7 +56,7 @@ task class:
         End time: 8000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -71,7 +71,7 @@ task class:
         End time: 7000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -86,7 +86,7 @@ task class:
         End time: 6000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -101,7 +101,7 @@ task class:
         End time: 5000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -116,7 +116,7 @@ task class:
         End time: 4000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -131,7 +131,7 @@ task class:
         End time: 3000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -146,7 +146,7 @@ task class:
         End time: 2000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
@@ -161,7 +161,7 @@ task class:
         End time: 1000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 8
+        Memory: 100
         VM Type: LINUX
         GPU enabled: no
         SLA type: SLA0
