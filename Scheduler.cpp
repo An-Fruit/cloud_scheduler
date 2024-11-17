@@ -6,6 +6,7 @@
 //
 
 #include "Scheduler.hpp"
+#include <assert.h>
 
 static bool migrating = false;
 static unsigned active_machines = 16;
@@ -65,12 +66,25 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     //
     // Other possibilities as desired
     Priority_t priority = (task_id == 0 || task_id == 64)? HIGH_PRIORITY : MID_PRIORITY;
-    if(migrating) {
-        VM_AddTask(vms[0], task_id, priority);
+    // if(migrating) {
+    //     VM_AddTask(vms[0], task_id, priority);
+    // }
+    // else {
+    //     VM_AddTask(vms[task_id % active_machines], task_id, priority);
+    // }// Skeleton code, you need to change it according to your algorithm
+
+    // FIFO Algorithm
+    TaskInfo_t task_info = GetTaskInfo(task_id);
+    for (unsigned i = 0; i < active_machines; i++) {
+        MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
+        unsigned free_memory = machine_info.memory_size - machine_info.memory_used;
+        if (task_info.required_memory <= free_memory) {
+            VM_AddTask(vms[i], task_id, priority);
+            return;
+        }
     }
-    else {
-        VM_AddTask(vms[task_id % active_machines], task_id, priority);
-    }// Skeleton code, you need to change it according to your algorithm
+    
+    assert(false);
 }
 
 void Scheduler::PeriodicCheck(Time_t now) {
@@ -121,6 +135,7 @@ void HandleTaskCompletion(Time_t time, TaskId_t task_id) {
 void MemoryWarning(Time_t time, MachineId_t machine_id) {
     // The simulator is alerting you that machine identified by machine_id is overcommitted
     SimOutput("MemoryWarning(): Overflow at " + to_string(machine_id) + " was detected at time " + to_string(time), 0);
+
 }
 
 void MigrationDone(Time_t time, VMId_t vm_id) {
@@ -162,4 +177,5 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
     // Called in response to an earlier request to change the state of a machine
 }
+
 
