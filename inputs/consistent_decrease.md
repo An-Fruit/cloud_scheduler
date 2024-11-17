@@ -12,160 +12,90 @@ machine class:
         Number of machines: 16
         CPU type: X86
         Number of cores: 8
-        Memory: 16000
+        Memory: 16384
         S-States: [120, 100, 100, 80, 40, 10, 0]
         P-States: [12, 8, 6, 4]
         C-States: [12, 3, 1, 0]
         MIPS: [1000, 800, 600, 400]
         GPUs: yes
 }
-# Longest running task
+# Longest running
+# starts at 50k microseconds, ends at 10 seconds
 task class:
 {
         Start time: 50000
-        End time: 10000000
+        End time : 10000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
+        Memory: 500
+        VM type: LINUX
+        GPU enabled: yes
         SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
+        CPU type: X86
+        Task type: AI
         Seed: 123456
 }
 # Second longest running
+# starts at 100k microseconds, ends at 9 seconds
 task class:
 {
         Start time: 100000
-        End time: 9000000
+        End time : 9000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
+        Memory: 500
+        VM type: LINUX
+        GPU enabled: yes
         SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
+        CPU type: X86
+        Task type: AI
         Seed: 123456
 }
 # Third longest running
+# starts at 150k microseconds, ends at 8 seconds
 task class:
 {
         Start time: 150000
-        End time: 8000000
+        End time : 8000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
+        Memory: 500
+        VM type: LINUX
+        GPU enabled: yes
         SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
+        CPU type: X86
+        Task type: AI
         Seed: 123456
 }
 # Fourth longest running
+# starts at 200k microseconds, ends at 7 seconds
 task class:
 {
         Start time: 200000
-        End time: 7000000
+        End time : 7000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
+        Memory: 500
+        VM type: LINUX
+        GPU enabled: yes
         SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
+        CPU type: X86
+        Task type: AI
         Seed: 123456
 }
-# Fifth longest running
+# Fifth longest running (shortest)
+# starts at 250k microseconds, ends at 6 seconds
 task class:
 {
         Start time: 250000
-        End time: 6000000
+        End time : 6000000
         Inter arrival: 50000
         Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
+        Memory: 500
+        VM type: LINUX
+        GPU enabled: yes
         SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
-        Seed: 123456
-}
-# Sixth longest running
-task class:
-{
-        Start time: 300000
-        End time: 5000000
-        Inter arrival: 50000
-        Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
-        Seed: 123456
-}
-# Seventh longest running
-task class:
-{
-        Start time: 350000
-        End time: 4000000
-        Inter arrival: 50000
-        Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
-        Seed: 123456
-}
-# Eigth longest running
-task class:
-{
-        Start time: 400000
-        End time: 3000000
-        Inter arrival: 50000
-        Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
-        Seed: 123456
-}
-# Ninth longest running
-task class:
-{
-        Start time: 450000
-        End time: 2000000
-        Inter arrival: 50000
-        Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
-        Seed: 123456
-}
-# Tenth longest running
-task class:
-{
-        Start time: 500000
-        End time: 1000000
-        Inter arrival: 50000
-        Expected runtime: 100000
-        Memory: 100
-        VM Type: LINUX
-        GPU enabled: no
-        SLA type: SLA0
-        CPU type: x86
-        Task Type: WEB
+        CPU type: X86
+        Task type: AI
         Seed: 123456
 }
