@@ -1,7 +1,7 @@
 # This is meant to simulate a sparse workload to see if we can save
 # energy by turning off machines that are not needed.
-# Tasks will be short, require little memory, and have large intervals between
-# arrival.
+# The task will be short, require little memory, and have long
+# intervals between arrival.
 machine class:
 {
         Number of machines: 16
