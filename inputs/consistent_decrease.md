@@ -2,8 +2,8 @@
 # at the beginning, which steadily drops off over the course of the run.
 # This is meant to see if we are able to deallocate machines properly
 # as less of them are needed to service fewer requests.
-# All workloads start within the first 500,000 microseconds, and the last
-# workload should end at 10,000,000 microseconds.
+# All workloads start within the first 250,000 microseconds, and the last
+# workload should end at 10 seconds.
 # All workloads start one after another spaced out by 50k microseconds.
 # In this case, there is only one type of machine to help eliminate other
 # factors that we are not testing for.
