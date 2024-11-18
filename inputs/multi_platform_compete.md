@@ -20,9 +20,9 @@ machine class:
         CPU type: POWER
         Number of cores: 16
         Memory: 65536
-        S-States: [120, 100, 100, 80, 40, 10, 0]
-        P-States: [12, 8, 6, 4]
-        C-States: [12, 3, 1, 0]
+        S-States: [200, 160, 120, 80, 40, 10, 0]
+        P-States: [20, 16, 12, 8]
+        C-States: [20, 6, 3, 0]
         MIPS: [1000, 800, 600, 400]
         GPUs: yes
 }
