@@ -28,11 +28,38 @@ machine class:
 }
 
 # most standard tasks can utilize the x86 machines
-# these will 
+# these start at 50k microseconds and end at 60 seconds.
 task class:
 {
         Start time: 50000
         End time: 60000000
+        Inter arrival: 100000 
+        Expected runtime: 500000
+        Memory: 200
+        VM type: LINUX
+        GPU enabled: yes
+        SLA type: SLA1
+        CPU type: X86
+        Task type: AI
+        Seed: 123456
 }
 
-# however, some 
+# however, a few HPC tasks will instead require to be run on the POWER
+# architecture using an AIX VM. These tasks will take a long time and many
+# resources, and will probably not be able to run if the POWER machines are
+# already being used for the other tasks. This will try to test if the 
+# scheduler deals with this case.
+task class:
+{
+        Start time: 1000000
+        End time: 5000000
+        Inter arrival: 2000000
+        Expected runtime: 10000000
+        Memory: 23000
+        VM type: AIX
+        GPU enabled: yes
+        SLA type: SLA0
+        CPU type: POWER
+        Task type: HPC
+        Seed: 123456
+}
