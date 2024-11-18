@@ -74,6 +74,7 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     // }// Skeleton code, you need to change it according to your algorithm
 
     // FIFO Algorithm
+    // TODO: make sure that everything is compatible (GPU enabled, right CPU)
     TaskInfo_t task_info = GetTaskInfo(task_id);
     for (unsigned i = 0; i < active_machines; i++) {
         MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
