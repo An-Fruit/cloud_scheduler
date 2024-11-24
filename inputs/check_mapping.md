@@ -1,4 +1,8 @@
-# This input file checks if the scheduling algorithm correctly gives tasks with a certain CPU/VM requirement to the correct machine. For this reason, the tasks are not intensive and do not require much memory or time. If the assignment is correct, there should be no difficulty with passing this task.
+# This input file checks if the scheduling algorithm correctly gives tasks 
+# with a certain CPU/VM requirement to the correct machine. For this reason, 
+# the tasks are not intensive and do not require much memory or time. If the 
+# assignment is correct, there should be no difficulty with passing this task.
+
 # X86 machine
 machine class:
 {
