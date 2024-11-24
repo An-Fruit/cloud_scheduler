@@ -21,6 +21,8 @@ public:
     void PeriodicCheck(Time_t now);
     void Shutdown(Time_t now);
     void TaskComplete(Time_t now, TaskId_t task_id);
+    void GreedyAddTask(TaskId_t task_id);
+    MachineId_t WakeNewMachine(CPUType_t cpu_type, MachineState_t state);
 private:
     vector<VMId_t> vms;
     vector<MachineId_t> machines;

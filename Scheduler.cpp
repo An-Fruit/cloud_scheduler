@@ -9,7 +9,7 @@
 #include <assert.h>
 
 static bool migrating = false;
-static unsigned active_machines = 16;
+static unsigned active_machines;
 
 void Scheduler::Init() {
     // Find the parameters of the clusters
@@ -22,25 +22,27 @@ void Scheduler::Init() {
     // 
     SimOutput("Scheduler::Init(): Total number of machines is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
-    for(unsigned i = 0; i < active_machines; i++)
-        vms.push_back(VM_Create(LINUX, X86));
+
+    active_machines = 16;
     for(unsigned i = 0; i < active_machines; i++) {
         machines.push_back(MachineId_t(i));
+        MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
     }    
-    for(unsigned i = 0; i < active_machines; i++) {
-        VM_Attach(vms[i], machines[i]);
-    }
-
     bool dynamic = false;
     if(dynamic)
         for(unsigned i = 0; i<4 ; i++)
             for(unsigned j = 0; j < 8; j++)
                 Machine_SetCorePerformance(MachineId_t(0), j, P3);
-    // Turn off the ARM machines
-    for(unsigned i = 24; i < Machine_GetTotal(); i++)
+    // Turn off the inactive machines
+    for(unsigned i = Machine_GetTotal() - (Machine_GetTotal() - active_machines); 
+            i < Machine_GetTotal(); i++) {
         Machine_SetState(MachineId_t(i), S5);
+        MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));
+        machine_info.s_state = S5;
+        
+    }
 
-    SimOutput("Scheduler::Init(): VM ids are " + to_string(vms[0]) + " ahd " + to_string(vms[1]), 3);
+    // SimOutput("Scheduler::Init(): VM ids are " + to_string(vms[0]) + " ahd " + to_string(vms[1]), 3);
 }
 
 void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
@@ -65,27 +67,48 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     // Turn on a machine, migrate an existing VM from a loaded machine....
     //
     // Other possibilities as desired
-    Priority_t priority = (task_id == 0 || task_id == 64)? HIGH_PRIORITY : MID_PRIORITY;
-    // if(migrating) {
-    //     VM_AddTask(vms[0], task_id, priority);
-    // }
-    // else {
-    //     VM_AddTask(vms[task_id % active_machines], task_id, priority);
-    // }// Skeleton code, you need to change it according to your algorithm
+    GreedyAddTask(task_id);
+}
 
-    // FIFO Algorithm
-    // TODO: make sure that everything is compatible (GPU enabled, right CPU)
+// Greedy Algorith to add a new task
+void Scheduler::GreedyAddTask(TaskId_t task_id) {
+    Priority_t priority = (task_id == 0 || task_id == 64)? HIGH_PRIORITY : MID_PRIORITY;
     TaskInfo_t task_info = GetTaskInfo(task_id);
+    VMId_t vm_id = VM_Create(task_info.required_vm, task_info.required_cpu);
+    vms.push_back(vm_id);
     for (unsigned i = 0; i < active_machines; i++) {
         MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
         unsigned free_memory = machine_info.memory_size - machine_info.memory_used;
-        if (task_info.required_memory <= free_memory) {
-            VM_AddTask(vms[i], task_id, priority);
+        if (task_info.required_memory <= free_memory && task_info.required_cpu == machine_info.cpu ) {
+            VM_Attach(vm_id, machines[i]);
+            VM_AddTask(vm_id, task_id, priority);
             return;
         }
     }
-    
-    assert(false);
+    // Wake up a new machine with the correct cpu type
+    VM_Attach(vm_id, WakeNewMachine(task_info.required_cpu, S0));
+    VM_AddTask(vm_id, task_id, priority);
+}
+
+// Wake up the new machine at the given cpu type and sleep state
+MachineId_t Scheduler::WakeNewMachine(CPUType_t cpu_type, MachineState_t state) {
+    for (unsigned i = 0; i < Machine_GetTotal(); i++) {
+        MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));
+        SimOutput("ID: " + to_string(machine_info.machine_id) + " Machine_Info State is: " 
+            + to_string(machine_info.s_state) + " Machine_Info CPU is: " 
+                + to_string(machine_info.cpu), 3);
+        if (machine_info.s_state == S5 && machine_info.cpu == cpu_type) {
+            Machine_SetState(machine_info.machine_id, state);
+            machine_info.s_state = state;
+            // StateChangeComplete()
+            machines.push_back(machine_info.machine_id);
+            active_machines++;
+            return machine_info.machine_id;
+        }
+    }
+    // Ran out of machines
+    assert (false);
+    return -1;
 }
 
 void Scheduler::PeriodicCheck(Time_t now) {
