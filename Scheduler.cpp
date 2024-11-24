@@ -23,7 +23,7 @@ void Scheduler::Init() {
     SimOutput("Scheduler::Init(): Total number of machines is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
 
-    active_machines = 16;
+    active_machines = Machine_GetTotal() / 2;
     for(unsigned i = 0; i < active_machines; i++) {
         machines.push_back(MachineId_t(i));
         MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
@@ -67,11 +67,11 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     // Turn on a machine, migrate an existing VM from a loaded machine....
     //
     // Other possibilities as desired
-    GreedyAddTask(task_id);
+    GreedyAllocation(task_id);
 }
 
 // Greedy Algorith to add a new task
-void Scheduler::GreedyAddTask(TaskId_t task_id) {
+void Scheduler::GreedyAllocation(TaskId_t task_id) {
     Priority_t priority = (task_id == 0 || task_id == 64)? HIGH_PRIORITY : MID_PRIORITY;
     TaskInfo_t task_info = GetTaskInfo(task_id);
     VMId_t vm_id = VM_Create(task_info.required_vm, task_info.required_cpu);
@@ -111,11 +111,24 @@ MachineId_t Scheduler::WakeNewMachine(CPUType_t cpu_type, MachineState_t state) 
     return -1;
 }
 
+void Scheduler::GreedyTurnOff() {
+    for (int i = machines.size() - 1; i >= 0; i--) {
+        MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
+        if (machine_info.active_vms == 0) {
+            Machine_SetState(machines[i], S5);
+            machines.erase(machines.begin() + i);
+        }
+    }
+}
+
 void Scheduler::PeriodicCheck(Time_t now) {
     // This method should be called from SchedulerCheck()
     // SchedulerCheck is called periodically by the simulator to allow you to monitor, make decisions, adjustments, etc.
     // Unlike the other invocations of the scheduler, this one doesn't report any specific event
     // Recommendation: Take advantage of this function to do some monitoring and adjustments as necessary
+    if (now % 1500000 == 0)
+        GreedyTurnOff();
+    
 }
 
 void Scheduler::Shutdown(Time_t time) {
@@ -173,12 +186,12 @@ void SchedulerCheck(Time_t time) {
     // This function is called periodically by the simulator, no specific event
     SimOutput("SchedulerCheck(): SchedulerCheck() called at " + to_string(time), 4);
     Scheduler.PeriodicCheck(time);
-    static unsigned counts = 0;
-    counts++;
-    if(counts == 10) {
-        migrating = true;
-        VM_Migrate(1, 9);
-    }
+    // static unsigned counts = 0;
+    // counts++;
+    // if(counts == 10) {
+    //     migrating = true;
+    //     VM_Migrate(1, 9);
+    // }
 }
 
 void SimulationComplete(Time_t time) {
@@ -200,6 +213,7 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
 
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
     // Called in response to an earlier request to change the state of a machine
+    // printf ("TIME: %lu\n", time);
 }
 
 
