@@ -3,7 +3,7 @@ machine class:
 # comment
         Number of machines: 16
         CPU type: X86
-        Number of cores: 8
+        Number of cores: 1
         Memory: 16384
         S-States: [120, 100, 100, 80, 40, 10, 0]
         P-States: [12, 8, 6, 4]
@@ -14,7 +14,7 @@ machine class:
 machine class:
 {
         Number of machines: 24
-        Number of cores: 16
+        Number of cores: 8
         CPU type: ARM
         Memory: 16384
         S-States: [120, 100, 100, 80, 40, 10, 0]

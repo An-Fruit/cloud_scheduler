@@ -23,7 +23,7 @@ void Scheduler::Init() {
     SimOutput("Scheduler::Init(): Total number of machines is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
 
-    active_machines = Machine_GetTotal() / 2;
+    active_machines = 1;
     for(unsigned i = 0; i < active_machines; i++) {
         machines.push_back(MachineId_t(i));
         MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
@@ -37,9 +37,7 @@ void Scheduler::Init() {
     for(unsigned i = Machine_GetTotal() - (Machine_GetTotal() - active_machines); 
             i < Machine_GetTotal(); i++) {
         Machine_SetState(MachineId_t(i), S5);
-        MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));
-        machine_info.s_state = S5;
-        
+        MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));    
     }
 
     // SimOutput("Scheduler::Init(): VM ids are " + to_string(vms[0]) + " ahd " + to_string(vms[1]), 3);
@@ -75,32 +73,32 @@ void Scheduler::GreedyAllocation(TaskId_t task_id) {
     Priority_t priority = (task_id == 0 || task_id == 64)? HIGH_PRIORITY : MID_PRIORITY;
     TaskInfo_t task_info = GetTaskInfo(task_id);
     VMId_t vm_id = VM_Create(task_info.required_vm, task_info.required_cpu);
-    vms.push_back(vm_id);
     for (unsigned i = 0; i < active_machines; i++) {
         MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
         unsigned free_memory = machine_info.memory_size - machine_info.memory_used;
-        if (task_info.required_memory <= free_memory && task_info.required_cpu == machine_info.cpu ) {
+        if (task_info.required_memory <= free_memory && task_info.required_cpu == machine_info.cpu 
+                && machine_info.s_state != S5) {
+            // printf ("REACHED HERE\n");
+            vms.push_back(vm_id);
             VM_Attach(vm_id, machines[i]);
             VM_AddTask(vm_id, task_id, priority);
             return;
         }
     }
     // Wake up a new machine with the correct cpu type
-    VM_Attach(vm_id, WakeNewMachine(task_info.required_cpu, S0));
+    MachineId_t machine_id = WakeNewMachine(task_info, S0);
+    vms.push_back(vm_id);
+    VM_Attach(vm_id, machine_id);
     VM_AddTask(vm_id, task_id, priority);
 }
 
 // Wake up the new machine at the given cpu type and sleep state
-MachineId_t Scheduler::WakeNewMachine(CPUType_t cpu_type, MachineState_t state) {
+MachineId_t Scheduler::WakeNewMachine(TaskInfo_t task_info, MachineState_t state) {
     for (unsigned i = 0; i < Machine_GetTotal(); i++) {
         MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));
-        SimOutput("ID: " + to_string(machine_info.machine_id) + " Machine_Info State is: " 
-            + to_string(machine_info.s_state) + " Machine_Info CPU is: " 
-                + to_string(machine_info.cpu), 3);
-        if (machine_info.s_state == S5 && machine_info.cpu == cpu_type) {
+        if (machine_info.cpu == task_info.required_cpu
+                && machine_info.memory_size >= task_info.required_memory + 8) {
             Machine_SetState(machine_info.machine_id, state);
-            machine_info.s_state = state;
-            // StateChangeComplete()
             machines.push_back(machine_info.machine_id);
             active_machines++;
             return machine_info.machine_id;
@@ -117,6 +115,7 @@ void Scheduler::GreedyTurnOff() {
         if (machine_info.active_vms == 0) {
             Machine_SetState(machines[i], S5);
             machines.erase(machines.begin() + i);
+            active_machines--;
         }
     }
 }
@@ -184,7 +183,7 @@ void MigrationDone(Time_t time, VMId_t vm_id) {
 
 void SchedulerCheck(Time_t time) {
     // This function is called periodically by the simulator, no specific event
-    SimOutput("SchedulerCheck(): SchedulerCheck() called at " + to_string(time), 4);
+    SimOutput("SchedulerCheck(): SchedulerCheck() called at " + to_string(time), 5);
     Scheduler.PeriodicCheck(time);
     // static unsigned counts = 0;
     // counts++;
@@ -213,7 +212,8 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
 
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
     // Called in response to an earlier request to change the state of a machine
-    // printf ("TIME: %lu\n", time);
+    // printf ("TIME: %lu State: %u\n", time, Machine_GetInfo(machine_id).s_state);
+    MachineInfo_t machine_info = Machine_GetInfo(machine_id);
 }
 
 

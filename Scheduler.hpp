@@ -23,7 +23,7 @@ public:
     void TaskComplete(Time_t now, TaskId_t task_id);
     void GreedyAllocation(TaskId_t task_id);
     void GreedyTurnOff();
-    MachineId_t WakeNewMachine(CPUType_t cpu_type, MachineState_t state);
+    MachineId_t WakeNewMachine(TaskInfo_t task_info, MachineState_t state);
 private:
     vector<VMId_t> vms;
     vector<MachineId_t> machines;
