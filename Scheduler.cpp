@@ -9,10 +9,14 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string>
+#include <unordered_map>
+#include <set>
 
 static bool migrating = false;
-static unsigned active_machines;
+static unsigned active_machines = -1;
+static unordered_map<MachineId_t, vector<VMId_t>> machine_to_VMs;
 
+static Priority_t sla_to_priority(SLAType_t sla);
 static void print_vm_info(VMId_t vm);
 static void print_machine_info(MachineId_t machine);
 static void print_task_info(TaskId_t task);
@@ -37,24 +41,20 @@ void Scheduler::Init() {
     SimOutput("Scheduler::Init(): Total number of machines is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
 
-    active_machines = 1;
-    for(unsigned i = 0; i < active_machines; i++) {
-        machines.push_back(MachineId_t(i));
-        MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
+    //initialize all machines
+    active_machines = 0;
+    for(unsigned i = 0; i < Machine_GetTotal(); i++) {
+        MachineId_t machine_id = MachineId_t(i);
+        machines.push_back(machine_id);
+        MachineInfo_t machine_info = Machine_GetInfo(machine_id);
+        //initialize mapping from machines to VMs to empty vectors
+        machine_to_VMs[machine_id] = {};
+        //turn on all machines for now
+        Machine_SetState(machine_id, S0);
+        active_machines++;
+        //dump info
+        print_machine_info(machines[i]);
     }    
-    bool dynamic = false;
-    if(dynamic)
-        for(unsigned i = 0; i<4 ; i++)
-            for(unsigned j = 0; j < 8; j++)
-                Machine_SetCorePerformance(MachineId_t(0), j, P3);
-    // Turn off the inactive machines
-    for(unsigned i = Machine_GetTotal() - (Machine_GetTotal() - active_machines); 
-            i < Machine_GetTotal(); i++) {
-        Machine_SetState(MachineId_t(i), S5);
-        MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));    
-    }
-
-    // SimOutput("Scheduler::Init(): VM ids are " + to_string(vms[0]) + " ahd " + to_string(vms[1]), 3);
 }
 
 /**
@@ -68,77 +68,81 @@ void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
     // Update your data structure. The VM now can receive new tasks
 }
 
+
+
+/**
+ * Runs whenever a new task is scheduled. This function operates according to
+ * the greedy algorithm, which finds the 1st available machine to attach the
+ * task to.
+ * @param now the time of the task
+ * @param task_id the ID of the new task that we want to schedule
+ */
 void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
-    // Get the task parameters
-    //  IsGPUCapable(task_id);
-    //  GetMemory(task_id);
-    //  RequiredVMType(task_id);
-    //  RequiredSLA(task_id);
-    //  RequiredCPUType(task_id);
-    // Decide to attach the task to an existing VM, 
-    //      vm.AddTask(taskid, Priority_T priority); or
-    // Create a new VM, attach the VM to a machine
-    //      VM vm(type of the VM)
-    //      vm.Attach(machine_id);
-    //      vm.AddTask(taskid, Priority_t priority) or
-    // Turn on a machine, create a new VM, attach it to the VM, then add the task
-    //
-    // Turn on a machine, migrate an existing VM from a loaded machine....
-    //
-    // Other possibilities as desired
-    GreedyAllocation(task_id);
-}
-
-// Greedy Algorith to add a new task
-void Scheduler::GreedyAllocation(TaskId_t task_id) {
-    Priority_t priority = (task_id == 0 || task_id == 64)? HIGH_PRIORITY : MID_PRIORITY;
     TaskInfo_t task_info = GetTaskInfo(task_id);
-    VMId_t vm_id = VM_Create(task_info.required_vm, task_info.required_cpu);
-    for (unsigned i = 0; i < active_machines; i++) {
-        MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
-        unsigned free_memory = machine_info.memory_size - machine_info.memory_used;
-        if (task_info.required_memory <= free_memory && task_info.required_cpu == machine_info.cpu 
-                && machine_info.s_state != S5) {
-            // printf ("REACHED HERE\n");
-            vms.push_back(vm_id);
-            VM_Attach(vm_id, machines[i]);
-            VM_AddTask(vm_id, task_id, priority);
-            return;
-        }
-    }
-    // Wake up a new machine with the correct cpu type
-    MachineId_t machine_id = WakeNewMachine(task_info, S0);
-    vms.push_back(vm_id);
-    VM_Attach(vm_id, machine_id);
-    VM_AddTask(vm_id, task_id, priority);
-}
+    Priority_t task_priority = sla_to_priority(task_info.required_sla);
 
-// Wake up the new machine at the given cpu type and sleep state
-MachineId_t Scheduler::WakeNewMachine(TaskInfo_t task_info, MachineState_t state) {
-    for (unsigned i = 0; i < Machine_GetTotal(); i++) {
-        MachineInfo_t machine_info = Machine_GetInfo(MachineId_t(i));
-        if (machine_info.cpu == task_info.required_cpu
-                && machine_info.memory_size >= task_info.required_memory + 8) {
-            Machine_SetState(machine_info.machine_id, state);
-            machines.push_back(machine_info.machine_id);
-            active_machines++;
-            return machine_info.machine_id;
+    vector<MachineId_t> candidates;
+    for(unsigned j = 0; j < active_machines; j++){
+        //get load factor of cur machine (a.k.a. memory use)
+        MachineId_t cur_machine = machines[j];
+        MachineInfo_t machine_info = Machine_GetInfo(cur_machine);
+        unsigned machine_load = machine_info.memory_used;
+        unsigned machine_capacity = machine_info.memory_size;
+        unsigned task_load = task_info.required_memory;
+        //check for matching CPU and capacity
+        if(machine_info.cpu == task_info.required_cpu 
+                && machine_load + task_load <= machine_capacity){
+            //prioritize matching GPUs, add immediately & finish
+            if(machine_info.gpus == task_info.gpu_capable){
+                    
+                //find 1st available VM and add task
+                vector<VMId_t> cur_machine_vms = machine_to_VMs[cur_machine];
+                unsigned N = cur_machine_vms.size();
+                for(unsigned k = 0; k < N; k++){
+                    VMInfo_t vm_info = VM_GetInfo(cur_machine_vms[k]);
+                    if(vm_info.vm_type == task_info.required_vm){
+                        VM_AddTask(cur_machine_vms[k], task_id, task_priority);
+                        return;
+                    }
+                }
+                
+                //no available VMs, create one & add task
+                VMId_t new_vm = VM_Create(task_info.required_vm, machine_info.cpu);
+                VM_Attach(new_vm, cur_machine);
+                machine_to_VMs[cur_machine].push_back(new_vm);
+                vms.push_back(new_vm);
+                VM_AddTask(new_vm, task_id, task_priority);
+                return;
+            } else{
+                //this is still a potential machine to use
+                candidates.push_back(cur_machine);
+            }
         }
     }
-    // Ran out of machines
-    assert (false);
-    return -1;
-}
+    
+    //first pass failed to find best option, now just find the 1st
+    //machine w/ a VM that works
+    for(unsigned i = 0; i < candidates.size(); i++){
+        MachineId_t cur_machine = candidates[i];
+        vector<VMId_t> cur_vms = machine_to_VMs[cur_machine];
+        for(unsigned j = 0; j < cur_vms.size(); j++){
+            VMInfo_t vm_info = VM_GetInfo(cur_vms[j]);
+            if(vm_info.vm_type == task_info.required_vm){
+                VM_AddTask(cur_vms[j], task_id, task_priority);
+                return;
+            }
+        }
 
-void Scheduler::GreedyTurnOff() {
-    for (int i = machines.size() - 1; i >= 0; i--) {
-        MachineInfo_t machine_info = Machine_GetInfo(machines[i]);
-        if (machine_info.active_vms == 0) {
-            Machine_SetState(machines[i], S5);
-            machines.erase(machines.begin() + i);
-            active_machines--;
-        }
+        //no valid VMs, must create one
+        VMId_t new_vm = VM_Create(task_info.required_vm, Machine_GetCPUType(cur_machine));
+        VM_Attach(new_vm, cur_machine);
+        machine_to_VMs[cur_machine].push_back(new_vm);
+        vms.push_back(new_vm);
+        VM_AddTask(new_vm, task_id, task_priority);
+        return;
     }
+    //should never be unable to add a task to a machine
+    assert(false);
 }
 
 void Scheduler::PeriodicCheck(Time_t now) {
@@ -146,8 +150,10 @@ void Scheduler::PeriodicCheck(Time_t now) {
     // SchedulerCheck is called periodically by the simulator to allow you to monitor, make decisions, adjustments, etc.
     // Unlike the other invocations of the scheduler, this one doesn't report any specific event
     // Recommendation: Take advantage of this function to do some monitoring and adjustments as necessary
-    if (now % 1500000 == 0)
-        GreedyTurnOff();
+    if (now % 1500000 == 0){
+        //do nothing
+    }
+        // GreedyTurnOff();
     
 }
 
@@ -163,11 +169,29 @@ void Scheduler::Shutdown(Time_t time) {
     SimOutput("SimulationComplete(): Time is " + to_string(time), 4);
 }
 
+/**
+ * Compare machines based on utilization (memory, in this case)
+ * TODO: finish this up and use in workload completion
+ */
+struct MachineUtilComparator{
+    bool operator()(MachineId_t a, MachineId_t b) const
+    {
+        return true;
+    }
+}
+/**
+ * Runs whenever a task is completed. This is done according to the greedy
+ * algorithm.
+ */
 void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
     // Do any bookkeeping necessary for the data structures
     // Decide if a machine is to be turned off, slowed down, or VMs to be migrated according to your policy
     // This is an opportunity to make any adjustments to optimize performance/energy
     SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
+
+    //sort machines in ascending order based on utilization
+    std::set<MachineId_t, 
+
 }
 
 // Public interface below
@@ -238,7 +262,27 @@ void StateChangeComplete(Time_t time, MachineId_t machine_id) {
 }
 
 
-
+/**
+ * Helper function to convert SLA requirements into priorities for 
+ * scheduling. This function should change if needed based on the scheduler.
+ * @param sla the SLA we want to convert
+ * @return the equivalent task priority.
+ */
+static Priority_t sla_to_priority(SLAType_t sla){
+    switch(sla){
+        case SLA0:
+            return HIGH_PRIORITY;
+        case SLA1:
+            return HIGH_PRIORITY;
+        case SLA2:
+            return MID_PRIORITY;
+        case SLA3:
+            return LOW_PRIORITY;
+        default:
+            break;
+    }
+    return MID_PRIORITY;
+}
 /**
  * Helper function to print all information about a given task
  * @param task the ID of the task we want info about
