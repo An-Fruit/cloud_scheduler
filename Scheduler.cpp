@@ -11,10 +11,12 @@
 #include <string>
 #include <unordered_map>
 #include <set>
+#include <algorithm>
 
 static bool migrating = false;
 static unsigned active_machines = -1;
 static unordered_map<MachineId_t, vector<VMId_t>> machine_to_VMs;
+static unordered_map<TaskId_t, VMId_t> task_to_VM;
 
 static Priority_t sla_to_priority(SLAType_t sla);
 static void print_vm_info(VMId_t vm);
@@ -26,6 +28,22 @@ static string pstate_tostring(CPUPerformance_t state);
 static string sstate_tostring(MachineState_t state);
 static string priority_tostring(Priority_t priority);
 static string sla_tostring(SLAType_t sla);
+
+/**
+ * Compare machines based on relative utilization. In this case, utilization will
+ * be the proportion of memory used.
+ * @return true if A < B, false otherwise
+ */
+struct MachineUtilComparator{
+    bool operator()(MachineId_t a, MachineId_t b) const
+    {
+        MachineInfo_t a_inf = Machine_GetInfo(a);
+        MachineInfo_t b_inf = Machine_GetInfo(b);
+        float a_util = static_cast<float>(a_inf.memory_used)/static_cast<float>(a_inf.memory_size);
+        float b_util = static_cast<float>(b_inf.memory_used)/static_cast<float>(b_inf.memory_size);
+        return a_util < b_util;
+    }
+};
 
 
 
@@ -53,19 +71,28 @@ void Scheduler::Init() {
         Machine_SetState(machine_id, S0);
         active_machines++;
         //dump info
-        print_machine_info(machines[i]);
+        // print_machine_info(machines[i]);
     }    
 }
 
 /**
  * Called by simulator when VM is done migrating due to previous call to 
- * VM_Migrate(). When this function is called, the VM is established & can
- * take new tasks
+ * VM_Migrate(). When this function is finished, the VM is established & can
+ * take new tasks. 
  * @param time the time when the migration has been completed
  * @param vm_id the identifier of the VM that was migrated
  */
 void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
-    // Update your data structure. The VM now can receive new tasks
+    
+    //update the mappings from machines to VMs by adding this VM to its new
+    //machine
+    VMInfo_t vm_info = VM_GetInfo(vm_id);
+    MachineId_t new_machine = vm_info.machine_id;
+    machine_to_VMs[new_machine].push_back(vm_id);
+    
+    
+
+    migrating = false;
 }
 
 
@@ -102,6 +129,7 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
                     VMInfo_t vm_info = VM_GetInfo(cur_machine_vms[k]);
                     if(vm_info.vm_type == task_info.required_vm){
                         VM_AddTask(cur_machine_vms[k], task_id, task_priority);
+                        task_to_VM[task_id] = cur_machine_vms[k];
                         return;
                     }
                 }
@@ -112,6 +140,7 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
                 machine_to_VMs[cur_machine].push_back(new_vm);
                 vms.push_back(new_vm);
                 VM_AddTask(new_vm, task_id, task_priority);
+                task_to_VM[task_id] = new_vm;
                 return;
             } else{
                 //this is still a potential machine to use
@@ -129,6 +158,7 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
             VMInfo_t vm_info = VM_GetInfo(cur_vms[j]);
             if(vm_info.vm_type == task_info.required_vm){
                 VM_AddTask(cur_vms[j], task_id, task_priority);
+                task_to_VM[task_id] = cur_vms[j];
                 return;
             }
         }
@@ -139,46 +169,54 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
         machine_to_VMs[cur_machine].push_back(new_vm);
         vms.push_back(new_vm);
         VM_AddTask(new_vm, task_id, task_priority);
+        task_to_VM[task_id] = new_vm;
         return;
     }
     //should never be unable to add a task to a machine
-    assert(false);
+    assert(false);  //TODO: remove this
 }
 
+/**Greedy algorithm does nothing with this*/
 void Scheduler::PeriodicCheck(Time_t now) {
     // This method should be called from SchedulerCheck()
     // SchedulerCheck is called periodically by the simulator to allow you to monitor, make decisions, adjustments, etc.
     // Unlike the other invocations of the scheduler, this one doesn't report any specific event
-    // Recommendation: Take advantage of this function to do some monitoring and adjustments as necessary
-    if (now % 1500000 == 0){
-        //do nothing
-    }
-        // GreedyTurnOff();
-    
+    // Recommendation: Take advantage of this function to do some monitoring and adjustments as necessary 
 }
 
+/**
+ * Called just before simulation terminates. Shut down all VMs and machines, and
+ * give a report on SLA violations and energy consumed.
+ */
 void Scheduler::Shutdown(Time_t time) {
     // Do your final reporting and bookkeeping here.
     // Report about the total energy consumed
     // Report about the SLA compliance
     // Shutdown everything to be tidy :-)
+    cout << "SLA violation report" << endl;
+    cout << "SLA0: " << GetSLAReport(SLA0) << "%" << endl;
+    cout << "SLA1: " << GetSLAReport(SLA1) << "%" << endl;
+    cout << "SLA2: " << GetSLAReport(SLA2) << "%" << endl;     // SLA3 do not have SLA violation issues
+    cout << "Total Energy " << Machine_GetClusterEnergy() << "KW-Hour" << endl;
+    cout << "Simulation run finished in " << double(time)/1000000 << " seconds" << endl;
+    SimOutput("SimulationComplete(): Simulation finished at time " + to_string(time), 4);
+
+    //shut down all VMs
+    //TODO: an exception is occurring here. Why?
     for(auto & vm: vms) {
         VM_Shutdown(vm);
+    }
+    //shut down all machines
+    for(unsigned i = 0; i < Machine_GetTotal(); i++){
+        MachineId_t machine_id = MachineId_t(i);
+        Machine_SetState(machine_id, S5);
     }
     SimOutput("SimulationComplete(): Finished!", 4);
     SimOutput("SimulationComplete(): Time is " + to_string(time), 4);
 }
 
-/**
- * Compare machines based on utilization (memory, in this case)
- * TODO: finish this up and use in workload completion
- */
-struct MachineUtilComparator{
-    bool operator()(MachineId_t a, MachineId_t b) const
-    {
-        return true;
-    }
-}
+
+
 /**
  * Runs whenever a task is completed. This is done according to the greedy
  * algorithm.
@@ -190,7 +228,90 @@ void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
     SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
 
     //sort machines in ascending order based on utilization
-    std::set<MachineId_t, 
+    std::sort(machines.begin(), machines.end(), MachineUtilComparator());
+    for(unsigned j = 0; j < machines.size(); j++){
+        print_machine_info(machines[j]);
+    }
+
+    //move workloads
+    for(unsigned j = 0; j < machines.size(); j++){
+        MachineId_t cur_machine_id = machines[j];
+        MachineInfo_t machine_info = Machine_GetInfo(cur_machine_id);
+        //don't bother w/ machines where utilization is 0
+        if(machine_info.memory_used == 0){
+            continue;
+        }
+
+        //move all tasks to another more utilized machine if possible.
+        vector<VMId_t> vms = machine_to_VMs[cur_machine_id];
+        for(VMId_t task_vm : vms){
+            // print_vm_info(task_vm);
+            VMInfo_t task_vm_info = VM_GetInfo(task_vm);
+            //migrate tasks to more utilized machines
+            vector<MachineId_t> candidates;
+            for(TaskId_t task_id : task_vm_info.active_tasks){
+                candidates.clear();
+                TaskInfo_t task_info = GetTaskInfo(task_id);
+                for(unsigned k = j + 1; k < machines.size(); k++){
+                    MachineId_t migration_machine_id = machines[k];
+                    MachineInfo_t migration_machine_info = Machine_GetInfo(migration_machine_id);
+                    unsigned task_util = task_info.required_memory;
+                    unsigned machine_util = migration_machine_info.memory_used;
+                    unsigned machine_cap = migration_machine_info.memory_size;
+                    //check if machine meets requirements
+                    if(migration_machine_info.s_state == S0 
+                        && task_info.required_cpu == migration_machine_info.cpu
+                            && task_util + machine_util < machine_cap){
+
+                        if(task_info.gpu_capable == migration_machine_info.gpus){
+                            candidates.insert(candidates.begin(), 
+                                                migration_machine_id);
+                        } else{
+                            candidates.push_back(migration_machine_id);
+                        }
+                    }
+                }
+
+                //best candidate should be 1st element.
+                if(candidates.size() > 0){
+                    MachineId_t candidate = candidates[0];
+                    vector<VMId_t> vms = machine_to_VMs[candidate];
+                    for(VMId_t candidate_vm : vms){
+                        VMInfo_t cand_vm_info = VM_GetInfo(candidate_vm);
+                        //move task to new VM
+                        if(task_info.required_vm == cand_vm_info.vm_type){
+                            VM_RemoveTask(task_vm, task_id);
+                            //check if we can shut down the current VM/machine
+                            VM_AddTask(candidate_vm, task_id, 
+                                sla_to_priority(task_info.required_sla));
+                            task_to_VM[task_id] = candidate_vm;
+                        }
+                    }
+                }
+            }
+
+            //turn off current VM if possible
+            VMInfo_t info_after_move = VM_GetInfo(task_vm);
+            if(info_after_move.active_tasks.size() == 0){
+                //TODO: this is causing exception. Why?
+                // print_vm_info(task_vm);
+                try{
+                    cout << "here 1" << endl;
+                    VM_Shutdown(task_vm);
+                    cout << "here 2" << endl;
+                } catch(...){
+                    //do nothing
+                }
+            }
+        }        
+
+        //turn off machine if possible.
+        MachineInfo_t updated_machine_info = Machine_GetInfo(cur_machine_id);
+        if(machine_info.active_vms == 0 && machine_info.active_tasks == 0){
+            cout << "shut down machine :)" << endl;
+            Machine_SetState(cur_machine_id, S5);
+        }
+    }
 
 }
 
@@ -223,36 +344,30 @@ void MigrationDone(Time_t time, VMId_t vm_id) {
     // The function is called on to alert you that migration is complete
     SimOutput("MigrationDone(): Migration of VM " + to_string(vm_id) + " was completed at time " + to_string(time), 4);
     Scheduler.MigrationComplete(time, vm_id);
-    migrating = false;
 }
 
 void SchedulerCheck(Time_t time) {
     // This function is called periodically by the simulator, no specific event
     SimOutput("SchedulerCheck(): SchedulerCheck() called at " + to_string(time), 5);
     Scheduler.PeriodicCheck(time);
-    // static unsigned counts = 0;
-    // counts++;
-    // if(counts == 10) {
-    //     migrating = true;
-    //     VM_Migrate(1, 9);
-    // }
 }
 
 void SimulationComplete(Time_t time) {
-    // This function is called before the simulation terminates Add whatever you feel like.
-    cout << "SLA violation report" << endl;
-    cout << "SLA0: " << GetSLAReport(SLA0) << "%" << endl;
-    cout << "SLA1: " << GetSLAReport(SLA1) << "%" << endl;
-    cout << "SLA2: " << GetSLAReport(SLA2) << "%" << endl;     // SLA3 do not have SLA violation issues
-    cout << "Total Energy " << Machine_GetClusterEnergy() << "KW-Hour" << endl;
-    cout << "Simulation run finished in " << double(time)/1000000 << " seconds" << endl;
-    SimOutput("SimulationComplete(): Simulation finished at time " + to_string(time), 4);
-    
     Scheduler.Shutdown(time);
 }
 
+
+
+/**
+ * Runs whenever the SLA on the given task is violated. According to the
+ * Greedy policy, we should migrate this task to another machine
+ * @param task_id the ID of the task whose SLA has been violated
+ * TODO: figure out how to get all the machines so we can move them to others
+ */
 void SLAWarning(Time_t time, TaskId_t task_id) {
-    
+    TaskInfo_t task_info = GetTaskInfo(task_id);
+    VMId_t task_vm = task_to_VM[task_id];
+        
 }
 
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
