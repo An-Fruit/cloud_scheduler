@@ -34,6 +34,32 @@ static string sstate_tostring(MachineState_t state);
 static string priority_tostring(Priority_t priority);
 static string sla_tostring(SLAType_t sla);
 
+
+/**
+ * Since we cannot directly have CPU utilization, we calculate it
+ * as a metric based on 3 factors:
+ * 1) VM density (VMs/core)
+ * 2) Task density (tasks/VM)
+ * 3) Memory Utilization (used memory/available)
+ * Scale task density much less than others since there could be many
+ * tasks on a single VM
+ * @param machine_id the ID of the machine we want to calculate utilization for
+ * @return a double indicating the overall utilization of the machine in the range[0, 1]
+ * TODO: how do we scale this to ensure that each factor is normalized? for now we just have 3 vms/core and 128 tasks/vm
+ */
+static double machine_util(MachineId_t machine_id){
+    MachineInfo_t info = Machine_GetInfo(machine_id);
+    double VM_density = static_cast<double>(info.active_vms)/(info.num_cpus * 3);
+    double task_density = static_cast<double>(info.active_tasks)/(max(info.active_vms, static_cast<unsigned>(1)) * 128);
+    double memory_util = static_cast<double>(info.memory_used)/info.memory_size;
+    printf("\nCalculating Machine Util for Machine %u:\nVM density = %.4f\nTask density = %.4f\nMemory Util = %.4f\n", machine_id, VM_density, task_density, memory_util);
+    double util = 0.5 * task_density + 0.3 * VM_density + 0.2 * memory_util;
+    printf("Calculated Utilization: %.4f\n", util);
+    return util;
+}
+
+
+
 /**
  * Compare machines based on relative utilization. In this case, utilization will
  * be the proportion of memory used.
@@ -42,11 +68,7 @@ static string sla_tostring(SLAType_t sla);
 struct MachineUtilComparator{
     bool operator()(MachineId_t a, MachineId_t b) const
     {
-        MachineInfo_t a_inf = Machine_GetInfo(a);
-        MachineInfo_t b_inf = Machine_GetInfo(b);
-        float a_util = static_cast<float>(a_inf.memory_used)/static_cast<float>(a_inf.memory_size);
-        float b_util = static_cast<float>(b_inf.memory_used)/static_cast<float>(b_inf.memory_size);
-        return a_util < b_util;
+        return machine_util(a) < machine_util(b);
     }
 };   
 
@@ -85,6 +107,127 @@ void Scheduler::Init() {
     }    
 }
 
+
+
+bool CPUCompatible(MachineId_t machine_id, TaskId_t task_id){
+    return Machine_GetCPUType(machine_id) == GetTaskInfo(task_id).required_cpu;
+}
+
+bool TaskMemoryFits(MachineId_t machine_id, TaskId_t task_id){
+    MachineInfo_t info = Machine_GetInfo(machine_id);
+    return GetTaskMemory(task_id) + info.memory_used + VM_MEMORY_OVERHEAD <= info.memory_size;
+}
+
+
+/**
+ * 
+ * TODO: figure out if we should full shutdown or just put in sleep mode
+ */
+void TurnOffUnused(vector<MachineId_t> &machines){
+    machines.erase(
+        std::remove_if(machines.begin(), machines.end(), [](MachineId_t machine_id)
+            {
+                MachineInfo_t machine_info = Machine_GetInfo(machine_id);
+                bool flag = machine_info.active_tasks == 0 
+                                && machine_info.active_vms == 0;
+                if(flag){
+                    Machine_SetState(machine_id, S3);
+                    active_machines--;
+                }
+                return flag;
+            }
+        ),
+        machines.end()
+    );
+
+    //comment out for actual runs
+    // cout << "machines after turning off unused:\n" << "[";
+    // for(MachineId_t machine_id : machines){
+    //     cout << machine_id << " ";
+    // }
+    // cout << "]" << endl;
+
+}
+
+/**
+ * Runs whenever a new task is scheduled. This function operates according to
+ * the greedy algorithm, which finds the 1st available machine to attach the
+ * task to based on utilization.
+ * @param now the time of the task
+ * @param task_id the ID of the new task that we want to schedule
+ * pre: Scheduler::machines contains only active machines
+ * TODO: change so that the SLA Warning func actually gets called from here
+ */
+void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
+    const unsigned N = machines.size();
+    unsigned j = 0;
+    TaskInfo_t task_info = GetTaskInfo(task_id);
+    vector<MachineId_t> candidates;
+    while(j < N){
+        MachineId_t machine_id = machines[j];
+        MachineInfo_t machine_info = Machine_GetInfo(machine_id);
+        if(CPUCompatible(machine_id, task_id) 
+            && TaskMemoryFits(machine_id, task_id)){
+            candidates.push_back(machine_id);
+            break;
+        }
+        j++;
+    }
+
+    //unallocated workload = SLA violation
+    if(candidates.size() == 0 || machine_util(candidates[0]) > .7){
+        cout << "couldn't find machine so SLA violation" << endl;
+        SLAWarning(now, task_id);
+    } else{
+        //find the right VM
+        vector<VMId_t> machine_VMs = machine_to_VMs[candidates[0]];
+        bool found = false;
+        for(VMId_t vm : machine_VMs){
+            VMInfo_t vm_info = VM_GetInfo(vm);
+            if(task_info.required_vm == vm_info.vm_type){
+                VM_AddTask(vm, task_id, task_info.priority);
+                found = true;
+                break;
+            }
+        }
+        
+        if(!found){
+            VMId_t new_vm = VM_Create(task_info.required_vm, task_info.required_cpu);
+            VM_Attach(new_vm, candidates[0]);
+            machine_to_VMs[candidates[0]].push_back(new_vm);
+            VM_AddTask(new_vm, task_id, task_info.priority);
+        }
+    }
+
+    //turn unused machines off
+    TurnOffUnused(machines);
+    // cout << "Machine Size: " << machines.size() << endl;
+}
+
+
+
+/**
+ * Runs whenever a task is completed. This is done according to the greedy
+ * algorithm.
+ * Do any bookkeeping necessary for the data structures
+ * Decide if a machine is to be turned off, slowed down, or VMs to be migrated according to your policy
+ * This is an opportunity to make any adjustments to optimize performance/energy
+ * TODO: implement
+ */
+void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
+    SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
+    std::sort(machines.begin(), machines.end(), MachineUtilComparator());
+    for(unsigned i = 0; i < machines.size(); i++){
+        MachineId_t machine_id = machines[i];
+        MachineInfo_t machine_info = Machine_GetInfo(machine_id);
+        if(machine_info.active_tasks > 0){
+            
+        }
+    }
+}
+
+
+
 /**
  * Called by simulator when VM is done migrating due to previous call to 
  * VM_Migrate(). When this function is finished, the VM is established & can
@@ -95,44 +238,6 @@ void Scheduler::Init() {
  */
 void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
 
-}
-
-
-
-bool CPUCompatible(MachineId_t machine_id, TaskId_t task_id){
-    return Machine_GetCPUType(machine_id) == GetTaskInfo(task_id).required_cpu;
-}
-
-bool TaskMemoryFits(MachineId_t machine_id, TaskId_t task_id){
-    MachineInfo_t info = Machine_GetInfo(machine_id);
-    return GetTaskMemory(task_id) + info.memory_used <= info.memory_size;
-}
-
-/**
- * Determines the utilization of a machine
- * @param machine_id the ID of the machine we need to calculate the util of
- * @return a floating point number in the range [0, 1] indicating utilization
- */
-double MachineUtilization (MachineId_t machine_id){
-
-}
-
-
-/**
- * Runs whenever a new task is scheduled. This function operates according to
- * the greedy algorithm, which finds the 1st available machine to attach the
- * task to.
- * @param now the time of the task
- * @param task_id the ID of the new task that we want to schedule
- * TODO: How do we calculate the utilization of a server? Memory? CPU?
- */
-void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
-    const int N = machines.size();
-    unsigned j = 0;
-    while(j < N){
-
-        j++;
-    }
 }
 
 
@@ -181,17 +286,6 @@ void Scheduler::Shutdown(Time_t time) {
 
 
 
-/**
- * Runs whenever a task is completed. This is done according to the greedy
- * algorithm.
- * Do any bookkeeping necessary for the data structures
- * Decide if a machine is to be turned off, slowed down, or VMs to be migrated according to your policy
- * This is an opportunity to make any adjustments to optimize performance/energy
- * TODO: implement
- */
-void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
-    SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
-}
 
 // Public interface below
 
@@ -213,12 +307,21 @@ void HandleTaskCompletion(Time_t time, TaskId_t task_id) {
 
 
 /**
- * TODO: implement
+ * Runs when memory on a machine is overcommitted
+ * @param time the time of the warning
+ * @param machine_id the ID of the machine whose memory is overcommitted
  */
 void MemoryWarning(Time_t time, MachineId_t machine_id) {
-    // The simulator is alerting you that machine identified by machine_id is overcommitted
     SimOutput("MemoryWarning(): Overflow at " + to_string(machine_id) + " was detected at time " + to_string(time), 0);
-    
+    //run the SLA violation routine
+    vector<VMId_t> machine_VMs = machine_to_VMs[machine_id];
+    for(VMId_t vm : machine_VMs){
+        VMInfo_t vm_info = VM_GetInfo(machine_VMs[0]);
+        if(vm_info.active_tasks.size() > 0){
+            SLAWarning(time, vm_info.active_tasks[0]);
+            return;
+        }
+    }
 }
 
 
@@ -250,17 +353,45 @@ void SimulationComplete(Time_t time) {
  * TODO: implement this
  */
 void SLAWarning(Time_t time, TaskId_t task_id) {
-        
+    //sort all machines in order of utilization
+    vector<MachineId_t> machines;
+    for(unsigned i =0; i < Machine_GetTotal(); i++){
+        machines.push_back(MachineId_t(i));
+    }
+
+    std::sort(machines.begin(), machines.end(), MachineUtilComparator());
+    //find machine that can acommodate the task
 }
 
 
 /**
- * Runs whenever a state change request (i.e. to shut down a machine, wake
+ * Runs whenever a S-State change request (i.e. to shut down a machine, wake
  * up from sleep, etc.) is complete
- * TODO: implement this
+ * @param time the time the change completed
+ * @param machine_id the ID of the machine whose state has changed
  */
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
+    MachineInfo_t info = Machine_GetInfo(machine_id);
+    switch(info.s_state){
+        case S0:
+            //we only turn machines back on during an SLA warning
+            //therefore we need to migrate some task to this machine
 
+
+            // cout << "Machine " << machine_id << " done set to S0" << endl;
+            break;
+        //all non-S0 states are 'sleep'
+        case S0i1:
+        case S1:
+        case S2:
+        case S3:
+        case S4:
+        case S5:
+            // cout << "Machine " << machine_id << " done set to " << sstate_tostring(info.s_state) << endl;
+            break;
+        default:
+            break;
+    }
 }
 
 

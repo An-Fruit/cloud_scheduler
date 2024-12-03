@@ -1,4 +1,4 @@
-//
+// Greedy Algorithm (what I had done on Sunday)
 //  Scheduler.cpp
 //  CloudSim
 //
