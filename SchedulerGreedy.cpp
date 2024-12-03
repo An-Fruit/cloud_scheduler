@@ -99,16 +99,40 @@ void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
 
 
 
+bool CPUCompatible(MachineId_t machine_id, TaskId_t task_id){
+    return Machine_GetCPUType(machine_id) == GetTaskInfo(task_id).required_cpu;
+}
+
+bool TaskMemoryFits(MachineId_t machine_id, TaskId_t task_id){
+    MachineInfo_t info = Machine_GetInfo(machine_id);
+    return GetTaskMemory(task_id) + info.memory_used <= info.memory_size;
+}
+
+/**
+ * Determines the utilization of a machine
+ * @param machine_id the ID of the machine we need to calculate the util of
+ * @return a floating point number in the range [0, 1] indicating utilization
+ */
+double MachineUtilization (MachineId_t machine_id){
+
+}
+
+
 /**
  * Runs whenever a new task is scheduled. This function operates according to
  * the greedy algorithm, which finds the 1st available machine to attach the
  * task to.
  * @param now the time of the task
  * @param task_id the ID of the new task that we want to schedule
- * TODO: implement
+ * TODO: How do we calculate the utilization of a server? Memory? CPU?
  */
 void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
-    
+    const int N = machines.size();
+    unsigned j = 0;
+    while(j < N){
+
+        j++;
+    }
 }
 
 
@@ -236,9 +260,7 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
  * TODO: implement this
  */
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
-    // Called in response to an earlier request to change the state of a machine
-    // printf ("TIME: %lu State: %u\n", time, Machine_GetInfo(machine_id).s_state);
-    MachineInfo_t machine_info = Machine_GetInfo(machine_id);
+
 }
 
 
