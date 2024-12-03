@@ -64,7 +64,7 @@ void Scheduler::Init() {
     //      Get the number of CPUs
     //      Get if there is a GPU or not
     // 
-    cout << "Greedy Scheduler!" << endl;
+    cout << "PMapper Scheduler!" << endl;
     SimOutput("Scheduler::Init(): Total number of machines is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
 
@@ -237,7 +237,7 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
  */
 void StateChangeComplete(Time_t time, MachineId_t machine_id) {
     // Called in response to an earlier request to change the state of a machine
-    printf ("TIME: %lu State: %u\n", time, Machine_GetInfo(machine_id).s_state);
+    // printf ("TIME: %lu State: %u\n", time, Machine_GetInfo(machine_id).s_state);
     MachineInfo_t machine_info = Machine_GetInfo(machine_id);
 }
 
