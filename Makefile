@@ -13,11 +13,14 @@ BUILD_DIR = build
 SRC = Init.cpp Machine.cpp main.cpp Simulator.cpp Task.cpp VM.cpp
 SRC_GREEDY = SchedulerGreedy.cpp
 SRC_PMAPPER = SchedulerPMapper.cpp
+SRC_ECO = SchedulerEEco.cpp
 
-# Object files
+# Object files for the simulator
 OBJ = $(addprefix $(BUILD_DIR)/,$(SRC:.cpp=.o))
+# Object files specific to a scheduler policy
 OBJ_GREEDY = $(addprefix $(BUILD_DIR)/,$(SRC_GREEDY:.cpp=.o))
 OBJ_PMAPPER = $(addprefix $(BUILD_DIR)/,$(SRC_PMAPPER:.cpp=.o))
+OBJ_ECO = $(addprefix $(BUILD_DIR)/,$(SRC_ECO:.cpp=.o))
 
 # Executable
 TARGET = simulator
@@ -37,8 +40,13 @@ greedy: $(OBJ) $(OBJ_GREEDY)
 pmapper: $(OBJ) $(OBJ_PMAPPER)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o scheduler_pmapper $(OBJ) $(OBJ_PMAPPER)
 
+# E-Eco Scheduler
+eco: $(OBJ) $(OBJ_ECO)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o scheduler_e_eco $(OBJ) $(OBJ_ECO)
+
 
 # Build target
+# ignore this
 $(TARGET): $(OBJ)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(OBJ)
 
@@ -48,4 +56,4 @@ $(BUILD_DIR)/%.o: %.cpp
 
 # Clean up build files
 clean:
-	rm $(OBJ_GREEDY) $(OBJ_PMAPPER) scheduler simulator scheduler_greedy scheduler_pmapper
+	rm $(OBJ_GREEDY) $(OBJ_PMAPPER) $(OBJ_ECO) scheduler simulator scheduler_greedy scheduler_pmapper scheduler_e_eco
