@@ -35,18 +35,15 @@ static string priority_tostring(Priority_t priority);
 static string sla_tostring(SLAType_t sla);
 
 /**
- * Compare machines based on relative utilization. In this case, utilization will
- * be the proportion of memory used.
+ * Compare machines based on energy consumed.
  * @return true if A < B, false otherwise
  */
-struct MachineUtilComparator{
+struct MachineEnergyComparator{
     bool operator()(MachineId_t a, MachineId_t b) const
     {
         MachineInfo_t a_inf = Machine_GetInfo(a);
         MachineInfo_t b_inf = Machine_GetInfo(b);
-        float a_util = static_cast<float>(a_inf.memory_used)/static_cast<float>(a_inf.memory_size);
-        float b_util = static_cast<float>(b_inf.memory_used)/static_cast<float>(b_inf.memory_size);
-        return a_util < b_util;
+        return a_inf.energy_consumed < b_inf.energy_consumed;
     }
 };   
 
@@ -85,6 +82,38 @@ void Scheduler::Init() {
     }    
 }
 
+
+
+/**
+ * Runs whenever a new task is scheduled. This function operates according to
+ * the greedy algorithm, which finds the 1st available machine to attach the
+ * task to.
+ * @param now the time of the task
+ * @param task_id the ID of the new task that we want to schedule
+ * TODO: implement
+ */
+void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
+    //sort machines by energy consumption
+    std::sort(machines.begin(), machines.end(), MachineEnergyComparator());
+    
+}
+
+
+
+/**
+ * Runs whenever a task is completed. This is done according to the greedy
+ * algorithm.
+ * Do any bookkeeping necessary for the data structures
+ * Decide if a machine is to be turned off, slowed down, or VMs to be migrated according to your policy
+ * This is an opportunity to make any adjustments to optimize performance/energy
+ * TODO: implement
+ */
+void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
+    SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
+}
+
+
+
 /**
  * Called by simulator when VM is done migrating due to previous call to 
  * VM_Migrate(). When this function is finished, the VM is established & can
@@ -98,18 +127,6 @@ void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
 }
 
 
-
-/**
- * Runs whenever a new task is scheduled. This function operates according to
- * the greedy algorithm, which finds the 1st available machine to attach the
- * task to.
- * @param now the time of the task
- * @param task_id the ID of the new task that we want to schedule
- * TODO: implement
- */
-void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
-    
-}
 
 
 
@@ -156,18 +173,6 @@ void Scheduler::Shutdown(Time_t time) {
 }
 
 
-
-/**
- * Runs whenever a task is completed. This is done according to the greedy
- * algorithm.
- * Do any bookkeeping necessary for the data structures
- * Decide if a machine is to be turned off, slowed down, or VMs to be migrated according to your policy
- * This is an opportunity to make any adjustments to optimize performance/energy
- * TODO: implement
- */
-void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
-    SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
-}
 
 // Public interface below
 
