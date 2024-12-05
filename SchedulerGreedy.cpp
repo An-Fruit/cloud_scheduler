@@ -19,6 +19,8 @@
 static Scheduler Scheduler;
 static bool migrating = false;
 static unsigned active_machines = -1;
+static uint64_t total_tasks = 0;
+static uint64_t tasks_completed = 0;
 //tracks VMs on a physical machine. update when migrating or when creating new VMs
 static unordered_map<MachineId_t, vector<VMId_t>> machine_to_VMs;
 //maps VMs to their source/destination when migrating. update when starting
@@ -170,6 +172,7 @@ void TurnOffUnused(vector<MachineId_t> &machines){
  * pre: Scheduler::machines contains only active machines
  */
 void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
+    total_tasks++;
     const unsigned N = machines.size();
     unsigned j = 0;
     TaskInfo_t task_info = GetTaskInfo(task_id);
@@ -248,31 +251,38 @@ bool CanMigrate(VMId_t vm_id, MachineId_t machine_id){
  * This is an opportunity to make any adjustments to optimize performance/energy
  */
 void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
+    tasks_completed++;
     SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
     std::sort(machines.begin(), machines.end(), MachineUtilComparator());
     for(unsigned j = 0; j < machines.size(); j++){
-        MachineId_t src = machines[j];
-        MachineInfo_t src_info = Machine_GetInfo(src);
+        MachineId_t src_pm = machines[j];
+        MachineInfo_t src_info = Machine_GetInfo(src_pm);
         if(src_info.active_tasks > 0){
-
             //migrate workloads to more utilized machines if possible
-            vector<VMId_t> src_VMs = machine_to_VMs[src];
-            vector<VMId_t>::iterator it = src_VMs.begin();
-            while(it != src_VMs.end()){
-                VMId_t vm_to_migrate = *it;
+            vector<VMId_t> src_VMs = machine_to_VMs[src_pm];
+            unordered_set<VMId_t> vms_to_migrate;
+            for(VMId_t src_VM : src_VMs){
                 bool found_dest = false;
-                MachineId_t dest;
-
+                MachineId_t dest = 0XDEADBEEF;
                 unsigned k = j + 1;
                 while(k < machines.size() && !found_dest){
                     dest = machines[k];
-                    found_dest = CanMigrate(vm_to_migrate, dest);
+                    found_dest = CanMigrate(src_VM, dest);
                     k++;
                 }
 
                 if(found_dest){
-                    cout << "Found Destination Machine " << dest << " for VM " << vm_to_migrate << endl;
-                    VM_Migrate(vm_to_migrate, dest);
+                    vms_to_migrate.insert(src_VM);
+                    migrating_VMs[src_VM] = {src_pm, dest};
+                    cout << "starting migration" << endl;
+                    VM_Migrate(src_VM, dest);
+                }
+            }
+
+            vector<VMId_t>::iterator it = src_VMs.begin();
+            while(it != src_VMs.end()){
+                VMId_t vm = *it;
+                if(vms_to_migrate.count(vm)){
                     //remove VM from source machine's mapping
                     it = src_VMs.erase(it);
                 } else{
@@ -321,13 +331,12 @@ void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
 // Recommendation: Take advantage of this function to do some monitoring and adjustments as necessary 
 // For the Greedy Algorithm, nothing is done.
 void Scheduler::PeriodicCheck(Time_t now) {
-
+    // cout << "total tasks: " << total_tasks << " completed tasks: " << tasks_completed << endl;
 }
 
 /**
  * Called just before simulation terminates. Shut down all VMs and machines, and
  * give a report on SLA violations and energy consumed.
- * TODO: finish implementation
  */
 void Scheduler::Shutdown(Time_t time) {
     // Do your final reporting and bookkeeping here.
@@ -341,6 +350,7 @@ void Scheduler::Shutdown(Time_t time) {
     cout << "Total Energy " << Machine_GetClusterEnergy() << "KW-Hour" << endl;
     cout << "Simulation run finished in " << double(time)/1000000 << " seconds" << endl;
     SimOutput("SimulationComplete(): Simulation finished at time " + to_string(time), 4);
+    cout << "total tasks: " << total_tasks << " completed tasks: " << tasks_completed << endl;
 
     //shut down all VMs
     for(auto & vm: vms) {
@@ -424,7 +434,7 @@ void SimulationComplete(Time_t time) {
  * Runs whenever the SLA on the given task is violated. According to the
  * Greedy policy, we should migrate this task to another machine
  * @param task_id the ID of the task whose SLA has been violated
- * TODO: finish migration
+ * TODO: for some reason there is infinite looping sometimes and it gets stuck
  */
 void SLAWarning(Time_t time, TaskId_t task_id) {
     //sort all machines in order of utilization
@@ -441,7 +451,6 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
     for(unsigned i = 0; i < machines.size(); i++){
         MachineId_t potential_dest = machines[i];
         MachineInfo_t dest_info = Machine_GetInfo(potential_dest);
-        
         if(CPUCompatible(potential_dest, task_id) 
                 && TaskMemoryFits(potential_dest, task_id)){
             dest = potential_dest;
@@ -476,7 +485,6 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
         //memory.
         throw std::runtime_error("Unable to find machine to migrate task " 
                     + to_string(task_id) + " to after SLA Violation");
-
     }
 }
 
