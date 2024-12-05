@@ -44,13 +44,6 @@ static string sla_tostring(SLAType_t sla);
 
 
 /**
- * Since we cannot directly have CPU utilization, we calculate it
- * as a metric based on 3 factors:
- * 1) VM density (VMs/core)
- * 2) Task density (tasks/VM)
- * 3) Memory Utilization (used memory/available)
- * Scale task density much less than others since there could be many
- * tasks on a single VM
  * @param machine_id the ID of the machine we want to calculate utilization for
  * @return a value indicating the overall utilization of the machine
  */
