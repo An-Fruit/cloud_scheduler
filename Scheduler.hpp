@@ -21,7 +21,7 @@ public:
     void PeriodicCheck(Time_t now);
     void Shutdown(Time_t now);
     void TaskComplete(Time_t now, TaskId_t task_id);
-private:
+    bool TryShutdown(MachineId_t machine_id);
     vector<VMId_t> vms;
     vector<MachineId_t> machines;
 };
