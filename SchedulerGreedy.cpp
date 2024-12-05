@@ -45,7 +45,7 @@ static unordered_map<MachineId_t, vector<TaskId_t>> wakeup_migration;
 //
 //Add to it in StateChangeComplete() when state gets changed to S0, and remove
 //from it every time you set the machine state to something that is not S0.
-static unordered_set<MachineId_t> awake_machines;
+static set<MachineId_t> awake_machines;
 
 
 static Priority_t sla_to_priority(SLAType_t sla);
@@ -112,11 +112,16 @@ void Scheduler::Init() {
         wakeup_migration[machine_id] = {};
         //turn on all machines for now
         awake_machines.insert(machine_id);
-        cout << "added machine " << machine_id << " to awake_machines" << endl;
         active_machines++;
         //dump info
         // print_machine_info(machines[i]);
+    }
+
+    cout << "init awake machines" << endl;
+    for(auto tmp : awake_machines){
+        cout << tmp << " ";
     }    
+    cout << endl;
 }
 
 
@@ -173,7 +178,11 @@ static bool try_shutdown(MachineId_t machine_id){
             }
             machine_to_VMs[machine_id].clear();
             awake_machines.erase(awake_machines.find(machine_id));
-            cout << "removed machine " << machine_id << " from awake_machines" << endl;;
+            cout << "removed machine " << machine_id << " from awake_machines" << endl;
+            for(auto &tmp : awake_machines){
+                cout << tmp << " ";
+            }
+            cout << endl;
             Machine_SetState(machine_id, S5);
             active_machines--;
             return true;
@@ -197,6 +206,7 @@ void TurnOffUnused(vector<MachineId_t> &machines){
         MachineId_t machine_id = *it;
         //shut down machine if needed
         if(try_shutdown(machine_id)){
+            cout << "turnoffunused for machine " << machine_id << endl;
             it = machines.erase(it);
         } else{
             it++;
@@ -360,6 +370,7 @@ void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
     pair<MachineId_t, MachineId_t> src_dest = migrating_VMs[vm_id];
     MachineId_t src = src_dest.first;
     MachineId_t dest = src_dest.second;
+    cout << "migration of VM " << vm_id << " from machine " << src << " to machine " << dest << " done" << endl;
     //done migrating, add to destination machine mapping
     machine_to_VMs[dest].push_back(vm_id);
     //put source to sleep if no more VMs/tasks left.
@@ -408,7 +419,7 @@ void Scheduler::Shutdown(Time_t time) {
     //shut down all machines
     for(unsigned i = 0; i < Machine_GetTotal(); i++){
         MachineId_t machine_id = MachineId_t(i);
-        unordered_set<MachineId_t>::iterator it = awake_machines.find(machine_id);
+        set<MachineId_t>::iterator it = awake_machines.find(machine_id);
         if(it != awake_machines.end())
             try_shutdown(*it);
     }
@@ -542,6 +553,7 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
             wakeup_migration[dest].push_back(task_id);
 
             //remove from source machine (how?)
+            cout << "req turn on machine " << dest << endl;
             Machine_SetState(dest, S0);
         }
     } else{
@@ -566,6 +578,11 @@ void StateChangeComplete(Time_t time, MachineId_t machine_id) {
     if(machine_info.s_state == S0){
         awake_machines.insert(machine_id);
         cout << "added machine " << machine_id << " to awake_machines" << endl;
+        for(MachineId_t tmp : awake_machines){
+            cout << tmp << " ";
+        }
+        cout << endl;
+
         //we only turn machines back on during an SLA warning
         //therefore we need to migrate some task to this machine
         //destination machine active, can migrate immediately
