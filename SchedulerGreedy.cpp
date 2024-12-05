@@ -438,8 +438,8 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
 
     std::sort(machines.begin(), machines.end(), MachineUtilComparator());
 
-    MachineId_t dest;
-    bool found;
+    MachineId_t dest = 0XDEADBEEF;
+    bool found = false;
     //find machine and VM that can accommodate the task
     for(unsigned i = 0; i < machines.size(); i++){
         MachineId_t potential_dest = machines[i];
