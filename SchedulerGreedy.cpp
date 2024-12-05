@@ -33,7 +33,7 @@ static unordered_map<VMId_t, pair<MachineId_t, MachineId_t>> migrating_VMs;
 
 //maps machines to tasks that are queued for that machine when it wakes up
 //this is for the SLA violation routine when it looks for machines on standby.
-static unordered_map<MachineId_t, vector<TaskId_t>> wakeup_migration;
+static unordered_map<MachineId_t, vector<TaskId_t>> wakeup_tasks;
 
 //tracks which machines have not been put to sleep or ordered to put to sleep
 //this circumvents Machine_GetInfo() which may display a machine as awake
@@ -109,7 +109,7 @@ void Scheduler::Init() {
         MachineInfo_t machine_info = Machine_GetInfo(machine_id);
         //initialize mapping from machines to VMs to empty vectors
         machine_to_VMs[machine_id] = {};
-        wakeup_migration[machine_id] = {};
+        wakeup_tasks[machine_id] = {};
         //turn on all machines for now
         awake_machines.insert(machine_id);
         active_machines++;
@@ -550,7 +550,7 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
             //StateChangeComplete()
 
             //add tasks to queue for when it wakes up
-            wakeup_migration[dest].push_back(task_id);
+            wakeup_tasks[dest].push_back(task_id);
 
             //remove from source machine (how?)
             cout << "req turn on machine " << dest << endl;
@@ -586,7 +586,7 @@ void StateChangeComplete(Time_t time, MachineId_t machine_id) {
         //we only turn machines back on during an SLA warning
         //therefore we need to migrate some task to this machine
         //destination machine active, can migrate immediately
-        for(TaskId_t task_id : wakeup_migration[machine_id]){
+        for(TaskId_t task_id : wakeup_tasks[machine_id]){
             TaskInfo_t task_info = GetTaskInfo(task_id);
             VMId_t new_vm = VM_Create(task_info.required_vm, machine_info.cpu);
             VM_Attach(new_vm, machine_id);
@@ -595,7 +595,7 @@ void StateChangeComplete(Time_t time, MachineId_t machine_id) {
         }
 
         //tasks added to machine, no need to add again later
-        wakeup_migration[machine_id].clear();
+        wakeup_tasks[machine_id].clear();
         active_machines++;
     }
 }
