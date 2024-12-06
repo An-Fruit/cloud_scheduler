@@ -24,7 +24,13 @@ static uint64_t tasks_completed = 0;
 
 //maps VMs to their source when migrating. update when starting
 //migration and when migration completes.
-static unordered_map<VMId_t, MachineId_t> migrating_VMs;
+static unordered_set<VMId_t> migrating_VMs;
+//keep track so we never power gate this
+static unordered_set<MachineId_t> migration_destinations;
+
+//track which machines are between states
+static unordered_set<MachineId_t> shutting_down;
+static unordered_set<MachineId_t> waking_up;
 
 //maps PMs to tasks that are queued for that machine when it wakes up
 //this is for the the manual SLA violation routine that is run
@@ -79,7 +85,7 @@ struct MachineUtilComparator{
  * Runs on startup, initializes parameters/data structures
  */
 void Scheduler::Init() {
-    cout << "Greedy Scheduler!" << endl;
+    cout << "Greedy Scheduler h!" << endl;
     SimOutput("Scheduler::Init(): Total number of PMs is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
 
@@ -98,7 +104,7 @@ void Scheduler::Init() {
 }
 
 static bool IsMigrating(VMId_t vm_id){
-    return migrating_VMs.count(vm_id) != 0;
+    return migrating_VMs.count(vm_id) > 0;
 }
 
 bool CPUCompatible(MachineId_t machine_id, TaskId_t task_id){
@@ -111,7 +117,7 @@ bool TaskMemoryFits(MachineId_t machine_id, TaskId_t task_id){
 }
 
 bool IsAwake(MachineId_t machine){
-    return awake.count(machine) != 0;
+    return awake.count(machine) != 0 && shutting_down.count(machine) == 0 && waking_up.count(machine) == 0;
 }
 
 /**
@@ -127,51 +133,40 @@ bool GPUCompatible(MachineId_t machine_id, TaskId_t task_id){
 /**
  * Helper method to try to shutdown a machine given its ID.
  * Updates all relevant metadata structures, and will only shut down
- * if it can close all the VMs (i.e. all VMs are empty and not migrating).
+ * if it has no active VMs, no VMs migrating to it, and no VMs that are
+ * migrating from it.
  * @param machine_id the machine we are trying to shut down
  * @return true if the machine got shut down, false otherwise
  */
 bool Scheduler::TryShutdown(MachineId_t machine_id){
-    MachineInfo_t machine_info = Machine_GetInfo(machine_id);
-    //already asleep
-    if(!IsAwake(machine_id)){
+    //make sure nobody is migrating to this VM
+    if(migration_destinations.count(machine_id) > 0 || !IsAwake(machine_id)){
         return false;
     }
-
-    unsigned closed = 0;
-    //shut down any inactive VMs belonging to the PM
-    vector<VMId_t>::iterator it = this->vms.begin();
-    while(it != this->vms.end()){
-        VMId_t vm_id = *it;
-        VMInfo_t vm_info = VM_GetInfo(vm_id);
-        //shut down VM  if possible
-        if(vm_info.machine_id == machine_id 
-            && vm_info.active_tasks.size() == 0 
-                && !IsMigrating(vm_id)){
-            VM_Shutdown(vm_id);
-            closed++;
-            //remove from list of active VMs
-            it = this->vms.erase(it);
-        } else{
-            it++;
+    MachineInfo_t machine_info = Machine_GetInfo(machine_id);
+    //make sure we don't have active VMs
+    bool safe_shutdown = machine_info.active_vms == 0;
+    //make sure we dono't have migrating VMs
+    if(safe_shutdown){
+        for(VMId_t vm : this->vms){
+            if(IsMigrating(vm)){
+                safe_shutdown = false;
+                break;
+            }
         }
     }
-
-    
-    //only shut down the machine if all VMs are closed
-    if(closed == machine_info.active_vms && machine_info.active_tasks == 0){
+    if(safe_shutdown){
         awake.erase(awake.find(machine_id));
+        cout << "shutting down machine " << machine_id << endl;
         Machine_SetState(machine_id, S5);
+        shutting_down.insert(machine_id);
         return true;
-    } else{
-        return false;
     }
-    
     return false;
 }
 
 
-static void AllocationSLA(TaskId_t task_id){
+static void NewTaskAllocationSLA(TaskId_t task_id){
      //sort all PMs in order of utilization
 
     std::sort(Scheduler.machines.begin(), Scheduler.machines.end(), MachineUtilComparator());
@@ -211,7 +206,10 @@ static void AllocationSLA(TaskId_t task_id){
 
             //add tasks that will need to be created to the queue for when it wakes up
             wakeup_tasks[dest].push_back(task_id);
+            cout << "[newtaskallocsla] request to turn on machine " << dest << endl;
+
             Machine_SetState(dest, S0);
+            waking_up.insert(S0);
         }
     } else{
         //failure case: no destination machine w/ compatible CPUs and enough
@@ -232,8 +230,8 @@ static void AllocationSLA(TaskId_t task_id){
 void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     total_tasks++;
     TaskInfo_t task_info = GetTaskInfo(task_id);
-    MachineId_t candidate = 0XDEADBEEF;
     bool found_machine = false;
+    //1st pass: awake machines
     for(MachineId_t machine_id : awake){
         MachineInfo_t machine_info = Machine_GetInfo(machine_id);
         //make sure machine is awake and meets requirements
@@ -241,23 +239,20 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
             && TaskMemoryFits(machine_id, task_id)
                 && GPUCompatible(machine_id, task_id)
                     && IsAwake(machine_id)){
-            candidate = machine_id;
+            VMId_t new_vm = VM_Create(task_info.required_vm, task_info.required_cpu);
+            this->vms.push_back(new_vm);
+            VM_Attach(new_vm, machine_id);
+            VM_AddTask(new_vm, task_id, task_info.priority);
+            task_to_vm[task_id] = new_vm;
             found_machine = true;
             break;
         }
     }
 
+
     //unallocated workload = SLA violation
     if(!found_machine){
-        AllocationSLA(task_id);
-    } else{
-        //we have found a machine, give it the task
-        VMId_t new_vm = VM_Create(task_info.required_vm, task_info.required_cpu);
-        this->vms.push_back(new_vm);
-        assert(IsAwake(candidate));
-        VM_Attach(new_vm, candidate);
-        VM_AddTask(new_vm, task_id, task_info.priority);
-        task_to_vm[task_id] = new_vm;
+        NewTaskAllocationSLA(task_id);
     }
 
     //turn unused PMs off
@@ -299,33 +294,33 @@ static bool CanMigrateVM(VMId_t vm_id, MachineId_t machine_id){
 void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
     tasks_completed++;
     //shut down the VM that task_id is located in. 
+    VMId_t task_vm = task_to_vm[task_id];
+    if(IsMigrating(task_vm)){
+        return;
+    }
+    VM_Shutdown(task_vm);
+    this->vms.erase(remove(this->vms.begin(), this->vms.end(), task_vm), this->vms.end());
     
     SimOutput("Scheduler::TaskComplete(): Task " + to_string(task_id) + " is complete at " + to_string(now), 4);
     std::sort(this->machines.begin(), this->machines.end(), MachineUtilComparator());
     for(unsigned j = 0; j < this->machines.size(); j++){
         MachineId_t src_pm = this->machines[j];
         if(IsAwake(src_pm)
-            && Machine_GetInfo(src_pm).active_tasks > 0){
+            && Machine_GetInfo(src_pm).active_vms > 0){
 
             //migrate workloads to more utilized machines if possible
             for(VMId_t src_VM : this->vms){
                 VMInfo_t src_vm_info = VM_GetInfo(src_VM);
-                bool found_dest = false;
-                MachineId_t dest = 0XDEADBEEF;
 
                 for(unsigned k = j + 1; k < this->machines.size(); k++){
                     MachineId_t potential = this->machines[k];
                     if(IsAwake(potential) && CanMigrateVM(src_VM, potential)){
-                        dest = potential;
-                        found_dest = true;
+                        migrating_VMs.insert(src_VM);
+                        cout << "[task complete] migrating VM " << src_VM << " to machine " << potential << endl;
+                        VM_Migrate(src_VM, potential);
+                        migration_destinations.insert(potential);
                         break;
                     }
-                }
-
-                if(found_dest){
-                    migrating_VMs[src_VM] = src_pm;
-                    if(CanMigrateVM(src_VM, dest))
-                        VM_Migrate(src_VM, dest);
                 }
             }
         }
@@ -345,11 +340,9 @@ void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
  * @param vm_id the identifier of the VM that was migrated
  */
 void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
-    MachineId_t src = migrating_VMs[vm_id];
-    //done migrating, add to destination machine mapping
-    //put source to sleep if no more VMs/tasks left.
-    TryShutdown(src);
+    cout << "fin moving VM " << vm_id << " to machine " << VM_GetInfo(vm_id).machine_id << endl;
     //update metadata structures
+    migration_destinations.erase(VM_GetInfo(vm_id).machine_id);
     migrating_VMs.erase(vm_id);
 }
 
@@ -391,9 +384,9 @@ void Scheduler::Shutdown(Time_t time) {
     this->vms.clear();
 
     //shut down all PMs
-    for(MachineId_t machine_id : this->machines){
-        TryShutdown(machine_id);
-    }
+    // for(MachineId_t machine_id : this->machines){
+    //     TryShutdown(machine_id);
+    // }
     SimOutput("SimulationComplete(): Finished!", 4);
     SimOutput("SimulationComplete(): Time is " + to_string(time), 4);
 }
@@ -505,17 +498,24 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
         if(IsAwake(dest)){
             //destination machine active, can migrate immediately
             //update migration mapping
-            migrating_VMs[vm_to_migrate] = dest;
-            if(CanMigrateVM(vm_to_migrate, dest))
+            if(CanMigrateVM(vm_to_migrate, dest)){
+                migrating_VMs.insert(vm_to_migrate);
+                cout << "[sla warning] migrating VM " << vm_to_migrate << " to machine " << dest << endl;
                 VM_Migrate(vm_to_migrate, dest);
+                migration_destinations.insert(dest);
+            }
         } else{
             //destination machine asleep (on standby),
             //we need to wait for it to wake up before migrating
 
             //add tasks to queue for when it wakes up
             // wakeup_tasks[dest].push_back(task_id);
+            //NOTE: some of these could have already finished by the time
+            //the machine wakes up. What to do in that case?
             wakeup_migrations[dest].push_back(vm_to_migrate);
+            cout << "[sla warning] request to turn on machine " << dest << endl;
             Machine_SetState(dest, S0);
+            waking_up.insert(S0);
         }
     } else{
         //failure case: no destination machine w/ compatible CPUs and enough
@@ -537,10 +537,12 @@ void StateChangeComplete(Time_t time, MachineId_t machine_id) {
     MachineInfo_t machine_info = Machine_GetInfo(machine_id);
     //just updated to awake state
     if(machine_info.s_state == S0){
+        cout << "machine " << machine_id << " awake" << endl;
         awake.insert(machine_id);
+        waking_up.erase(waking_up.find(machine_id));
 
         //add all the tasks that were waiting to be moved to this machine
-        //this should be from AllocationSLA()
+        //this should be from NewTaskAllocationSLA()
         for(TaskId_t task_id : wakeup_tasks[machine_id]){
             TaskInfo_t task_info = GetTaskInfo(task_id);
             VMId_t new_vm = VM_Create(task_info.required_vm, machine_info.cpu);
@@ -552,15 +554,26 @@ void StateChangeComplete(Time_t time, MachineId_t machine_id) {
         }
 
         //migrate all VMs that needed to be migrated
+        //NOTE: some of these could have shut down between when they were added
+        //      to the queue and the present
         for(VMId_t vm_id : wakeup_migrations[machine_id]){
-            //update
-            migrating_VMs[vm_id] = machine_id;
-            if(CanMigrateVM(vm_id, machine_id))
+            if(CanMigrateVM(vm_id, machine_id)){
+                migrating_VMs.insert(vm_id);
+                cout << "[state change fin] migrating VM " << vm_id << " to machine " << machine_id << endl;
                 VM_Migrate(vm_id, machine_id);
+                migration_destinations.insert(machine_id);
+            }
+                
         }
 
         //tasks added to machine, no need to add again later
         wakeup_tasks[machine_id].clear();
+    } else{
+        shutting_down.erase(shutting_down.find(machine_id));
+        if(awake.count(machine_id) > 0){
+            awake.erase(awake.find(machine_id));
+        }
+        cout << "machine " << machine_id << " fully down" << endl;
     }
 }
 
