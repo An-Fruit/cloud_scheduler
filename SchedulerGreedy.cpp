@@ -1,10 +1,4 @@
 //  THIS VERSION CONTAINS THE GREEDY ALGORITHM 
-//
-//  Scheduler.cpp
-//  CloudSim
-//  
-//  Created by ELMOOTAZBELLAH ELNOZAHY on 10/20/24.
-//
 #include "Scheduler.hpp"
 #include <assert.h>
 #include <stdio.h>
@@ -33,7 +27,6 @@ static unordered_map<MachineId_t, bool> changing_state;
 //this is for the the manual SLA violation routine that is run
 //by Scheduler::NewTask(). This is because no VMs have been created,
 //so we need to create these when the Machine done setting state to S0
-//TODO: change these wakeups so that we assign machines on state change, not otherwise
 static vector<TaskId_t> wakeup_tasks;
 
 //for the actual SLA routine, when it looks for PMs on standby to migrate to.
@@ -234,7 +227,7 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     TaskInfo_t task_info = GetTaskInfo(task_id);
     bool found_machine = false;
     //1st pass: awake machines
-    for(MachineId_t machine_id : awake){
+    for(MachineId_t machine_id : this->machines){
         MachineInfo_t machine_info = Machine_GetInfo(machine_id);
         //make sure machine is awake and meets requirements
         if(CPUCompatible(machine_id, task_id) 
@@ -255,7 +248,6 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     //unallocated workload = SLA violation
     if(!found_machine){
         // cout << "couldn't find machine on 1st pass in newtask" << endl;
-        //TODO: this is happening too often.
         NewTaskAllocationSLA(task_id);
     } else{
         //turn unused PMs off
@@ -491,7 +483,6 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
     bool found = false;
     //find machine and VM that can accommodate the task
     //note: some of these PMs can be sleeping or shut down
-    //TODO: change to prioritize awake PMs
     for(unsigned i = 0; i < Scheduler.machines.size(); i++){
         MachineId_t potential_dest = Scheduler.machines[i];
         MachineInfo_t dest_info = Machine_GetInfo(potential_dest);
