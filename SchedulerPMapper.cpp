@@ -1,10 +1,4 @@
-//  THIS VERSION CONTAINS THE GREEDY ALGORITHM 
-//
-//  Scheduler.cpp
-//  CloudSim
-//  
-//  Created by ELMOOTAZBELLAH ELNOZAHY on 10/20/24.
-//
+//PMapper Scheduler
 #include "Scheduler.hpp"
 #include <assert.h>
 #include <stdio.h>
@@ -21,39 +15,19 @@ static uint64_t tasks_completed = 0;
 
 
 
-//maps VMs to their source when migrating. update when starting
-//migration and when migration completes.
+//tracks migrating VMs and destinations
 static unordered_set<VMId_t> migrating_VMs;
-//keep track so we never power gate this
 static unordered_set<MachineId_t> migration_destinations;
 
-//track which machines are between states
+//track if state inconsistent
 static unordered_map<MachineId_t, bool> changing_state;
-//maps PMs to tasks that are queued for that machine when it wakes up
-//this is for the the manual SLA violation routine that is run
-//by Scheduler::NewTask(). This is because no VMs have been created,
-//so we need to create these when the Machine done setting state to S0
-//TODO: change these wakeups so that we assign machines on state change, not otherwise
-static vector<TaskId_t> wakeup_tasks;
 
-//for the actual SLA routine, when it looks for PMs on standby to migrate to.
+//event queue
+static vector<TaskId_t> wakeup_tasks;
 static vector<VMId_t> wakeup_migrations;
 
-//tracks which PMs have not been put to sleep or ordered to put to sleep
-//this circumvents Machine_GetInfo() which may display a machine as awake
-//when it has been power gated previously, since there is delay.
-//
-//USE THIS EVERY TIME TO CHECK IF A MACHINE IS AWAKE OR NOT. DO NOT RELY ON 
-//MACHINE_GETINFO UNLESS THE STATE CHANGE HAS JUST HAPPENED (I.E. IN
-//StateChangeComplete())
-//
-//Add to it in StateChangeComplete() when state gets changed to S0, and remove
-//from it every time you set the machine state to something that is not S0.
-//set of currently awake machines, including ones that could be changing state.
-//when accessing, be careful
 static set<MachineId_t> awake;
 static unordered_map<TaskId_t, VMId_t> task_to_vm;
-//when we migrate, we must reserve memory to avoid overflow
 static unordered_map<MachineId_t, unsigned> reserved_mem;
 
 static Priority_t sla_to_priority(SLAType_t sla);
@@ -82,12 +56,18 @@ struct MachineUtilComparator{
 };
 
 
+struct MachineEnergyComparator{
+    bool operator()(MachineId_t a, MachineId_t b) const
+    {
+        return Machine_GetInfo(a).energy_consumed < Machine_GetInfo(b).energy_consumed;
+    }
+};
 
 /**
  * Runs on startup, initializes parameters/data structures
  */
 void Scheduler::Init() {
-    cout << "Greedy Scheduler!" << endl;
+    cout << "PMapper Scheduler!" << endl;
     SimOutput("Scheduler::Init(): Total number of PMs is " + to_string(Machine_GetTotal()), 3);
     SimOutput("Scheduler::Init(): Initializing scheduler", 1);
 
@@ -177,7 +157,6 @@ static void NewTaskAllocationSLA(TaskId_t task_id){
     bool found = false;
     //find machine and VM that can accommodate the task
     //note: some of these PMs can be sleeping or shut down
-    //TODO: change to prioritize awake PMs
     for(unsigned i = 0; i < Scheduler.machines.size(); i++){
         MachineId_t potential_dest = Scheduler.machines[i];
         MachineInfo_t dest_info = Machine_GetInfo(potential_dest);
@@ -223,9 +202,7 @@ static void NewTaskAllocationSLA(TaskId_t task_id){
 
 
 /**
- * Runs whenever a new task is scheduled. This function operates according to
- * the greedy algorithm, which finds the 1st available machine to attach the
- * task to based on utilization.
+ * Runs whenever a new task is scheduled. 
  * @param now the time of the task
  * @param task_id the ID of the new task that we want to schedule
  */
@@ -233,8 +210,9 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     total_tasks++;
     TaskInfo_t task_info = GetTaskInfo(task_id);
     bool found_machine = false;
+    sort(this->machines.begin(), this->machines.end(), MachineEnergyComparator());
     //1st pass: awake machines
-    for(MachineId_t machine_id : awake){
+    for(MachineId_t machine_id : this->machines){
         MachineInfo_t machine_info = Machine_GetInfo(machine_id);
         //make sure machine is awake and meets requirements
         if(CPUCompatible(machine_id, task_id) 
@@ -252,10 +230,8 @@ void Scheduler::NewTask(Time_t now, TaskId_t task_id) {
     }
 
 
-    //unallocated workload = SLA violation
     if(!found_machine){
         // cout << "couldn't find machine on 1st pass in newtask" << endl;
-        //TODO: this is happening too often.
         NewTaskAllocationSLA(task_id);
     } else{
         //turn unused PMs off
@@ -292,9 +268,7 @@ static bool CanMigrateVM(VMId_t vm_id, MachineId_t machine_id){
 
 
 /**
- * Runs whenever a task is completed. This is done according to the greedy
- * algorithm. We try to move tasks from the PM that the completed task
- * was located on to more utilized PMs to consolidate.
+ * Runs whenever a task is completed. 
  */
 void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
     tasks_completed++;
@@ -341,12 +315,6 @@ void Scheduler::TaskComplete(Time_t now, TaskId_t task_id) {
 
 
 /**
- * Called by simulator when VM is done migrating due to previous migration
- * request. When this function is finished, the VM is established & can
- * take new tasks. 
- * When we're done migrating, check the source machine
- * to see if it's empty. If it is, put it in deep sleep. (This is esentially
- * part of the task completion algo for Greedy)
  * @param time the time when the migration has been completed
  * @param vm_id the identifier of the VM that was migrated
  */
@@ -376,11 +344,6 @@ void Scheduler::MigrationComplete(Time_t time, VMId_t vm_id) {
 
 
 
-// This method should be called from SchedulerCheck()
-// SchedulerCheck is called periodically by the simulator to allow you to monitor, make decisions, adjustments, etc.
-// Unlike the other invocations of the scheduler, this one doesn't report any specific event
-// Recommendation: Take advantage of this function to do some monitoring and adjustments as necessary 
-// For the Greedy Algorithm, nothing is done.
 void Scheduler::PeriodicCheck(Time_t now) {
     // cout << "total tasks: " << total_tasks << " completed tasks: " << tasks_completed << " time: " << now << endl;
 }
@@ -478,8 +441,7 @@ void SimulationComplete(Time_t time) {
 
 
 /**
- * Runs whenever the SLA on the given task is violated. According to the
- * Greedy policy, we should migrate this task to another machine.
+ * Runs whenever the SLA on the given task is violated.
  * @param task_id the ID of the task whose SLA has been violated
  */
 void SLAWarning(Time_t time, TaskId_t task_id) {
@@ -491,7 +453,6 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
     bool found = false;
     //find machine and VM that can accommodate the task
     //note: some of these PMs can be sleeping or shut down
-    //TODO: change to prioritize awake PMs
     for(unsigned i = 0; i < Scheduler.machines.size(); i++){
         MachineId_t potential_dest = Scheduler.machines[i];
         MachineInfo_t dest_info = Machine_GetInfo(potential_dest);

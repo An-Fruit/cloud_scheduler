@@ -1,4 +1,4 @@
-//  THIS VERSION CONTAINS THE GREEDY ALGORITHM 
+//Greedy Scheduler
 #include "Scheduler.hpp"
 #include <assert.h>
 #include <stdio.h>
