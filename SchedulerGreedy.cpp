@@ -15,8 +15,7 @@ static uint64_t tasks_completed = 0;
 
 
 
-//maps VMs to their source when migrating. update when starting
-//migration and when migration completes.
+//track migrating VMs
 static unordered_set<VMId_t> migrating_VMs;
 //keep track so we never power gate this
 static unordered_set<MachineId_t> migration_destinations;
@@ -33,17 +32,6 @@ static vector<TaskId_t> wakeup_tasks;
 static vector<VMId_t> wakeup_migrations;
 
 //tracks which PMs have not been put to sleep or ordered to put to sleep
-//this circumvents Machine_GetInfo() which may display a machine as awake
-//when it has been power gated previously, since there is delay.
-//
-//USE THIS EVERY TIME TO CHECK IF A MACHINE IS AWAKE OR NOT. DO NOT RELY ON 
-//MACHINE_GETINFO UNLESS THE STATE CHANGE HAS JUST HAPPENED (I.E. IN
-//StateChangeComplete())
-//
-//Add to it in StateChangeComplete() when state gets changed to S0, and remove
-//from it every time you set the machine state to something that is not S0.
-//set of currently awake machines, including ones that could be changing state.
-//when accessing, be careful
 static set<MachineId_t> awake;
 static unordered_map<TaskId_t, VMId_t> task_to_vm;
 //when we migrate, we must reserve memory to avoid overflow
