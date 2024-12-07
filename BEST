@@ -1,0 +1,7 @@
+Workload: GentlerHour
+Algorithm: E-Eco
+Energy: 4.16775 KWhr
+Running Time: 3603.48 sec
+SLA0: 3.65%
+SLA1: 0.43%
+SLA2: 0%
