@@ -5,6 +5,7 @@
 - ```SchedulerGreedy.cpp``` source code for Greedy Algo
 - ```SchedulerPMapper.cpp``` source code for PMapper Algo
 - ```SchedulerEEco.cpp``` source code for E-Eco Algo
+- ```BEST``` file w/ best run
 
 # Building
 To build the the scheduler executable:
