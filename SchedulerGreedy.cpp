@@ -1,5 +1,4 @@
-//  THIS VERSION CONTAINS THE GREEDY ALGORITHM SCHEDULER AS DETAILED
-//  IN THE SLIDES
+//  THIS VERSION CONTAINS THE GREEDY ALGORITHM 
 //
 //  Scheduler.cpp
 //  CloudSim
@@ -444,8 +443,7 @@ void HandleTaskCompletion(Time_t time, TaskId_t task_id) {
  * @param machine_id the ID of the machine whose memory is overcommitted
  */
 void MemoryWarning(Time_t time, MachineId_t machine_id) {
-    SimOutput("MemoryWarning(): Overflow at machine " + to_string(machine_id) + " was detected at time " + to_string(time), 0);
-    print_machine_info(machine_id);
+    SimOutput("MemoryWarning(): Overflow at machine " + to_string(machine_id) + " was detected at time " + to_string(time), 1);
     //run the SLA violation routine on one of the tasks on the machine
     
     //try to find least utilized machine that is awake that can acommodate
@@ -508,7 +506,6 @@ void SLAWarning(Time_t time, TaskId_t task_id) {
     //destination machine found. migrate the task there.
     if(found){
         MachineInfo_t dest_info = Machine_GetInfo(dest);
-        assert(task_to_vm.count(task_id) != 0);
         VMId_t vm_to_migrate = task_to_vm[task_id];
 
 
